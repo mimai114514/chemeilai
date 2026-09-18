@@ -2,7 +2,6 @@ package io.github.mimai114514.chemeilai.ui.navigation
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NearMe
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -17,7 +16,6 @@ enum class TopDestination(
     val icon: ImageVector,
 ) {
     NEARBY("nearby", "附近", Icons.Filled.NearMe),
-    SEARCH("search", "搜索", Icons.Filled.Search),
     FAVORITES("favorites", "收藏", Icons.Filled.Star),
 }
 

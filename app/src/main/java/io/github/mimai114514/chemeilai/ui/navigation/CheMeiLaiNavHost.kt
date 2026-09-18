@@ -92,12 +92,13 @@ fun CheMeiLaiNavHost() {
                         )
                     },
                     onPickCity = { navController.navigate(Routes.CITY) },
-                    onSearchClick = { goTopLevel(Routes.SEARCH) },
+                    onSearchClick = { navController.navigate(Routes.SEARCH) },
                 )
             }
 
             composable(Routes.SEARCH) {
                 SearchScreen(
+                    onBack = { navController.popBackStack() },
                     onStationClick = { station ->
                         navController.navigate(Routes.station(station.sId, station.name))
                     },

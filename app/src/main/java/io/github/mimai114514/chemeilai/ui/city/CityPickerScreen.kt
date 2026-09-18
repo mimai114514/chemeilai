@@ -74,7 +74,7 @@ fun CityPickerScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("城市名或拼音，如 韶关 / shaoguan") },
+                placeholder = { Text("城市名或拼音") },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                 trailingIcon = {
                     if (state.query.isNotEmpty()) {
