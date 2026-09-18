@@ -28,7 +28,6 @@ import io.github.mimai114514.chemeilai.ui.line.LineDetailScreen
 import io.github.mimai114514.chemeilai.ui.nearby.NearbyScreen
 import io.github.mimai114514.chemeilai.ui.realtime.RealtimeScreen
 import io.github.mimai114514.chemeilai.ui.search.SearchScreen
-import io.github.mimai114514.chemeilai.ui.settings.AboutScreen
 import io.github.mimai114514.chemeilai.ui.settings.SettingsScreen
 import io.github.mimai114514.chemeilai.ui.station.StationDetailScreen
 
@@ -37,7 +36,6 @@ private object Routes {
     const val SEARCH = "search"
     const val FAVORITES = "favorites"
     const val SETTINGS = "settings"
-    const val ABOUT = "about"
     const val CITY = "city"
     const val STATION = "station/{sId}?name={name}"
     const val REALTIME = "realtime/{sId}/{lineNo}/{direction}?name={name}"
@@ -176,11 +174,7 @@ fun CheMeiLaiNavHost() {
             }
 
             composable(Routes.SETTINGS) {
-                SettingsScreen(onAboutClick = { navController.navigate(Routes.ABOUT) })
-            }
-
-            composable(Routes.ABOUT) {
-                AboutScreen(onBack = { navController.popBackStack() })
+                SettingsScreen()
             }
 
             composable(Routes.CITY) {
