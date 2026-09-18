@@ -2,8 +2,10 @@ package io.github.mimai114514.chemeilai.ui.settings
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Code
@@ -19,11 +23,11 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LocationCity
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -74,29 +78,38 @@ fun SettingsScreen(onPickCity: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            SettingRow(
-                title = "城市选择",
-                subtitle = state.cityName ?: "未选择",
-                icon = Icons.Outlined.LocationCity,
-                onClick = onPickCity,
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            SettingRow(
-                title = "应用开屏页",
-                subtitle = if (state.startDestination == START_DESTINATION_FAVORITES) "收藏" else "附近（默认）",
-                icon = Icons.Outlined.Home,
-                onClick = { showStartPicker = true },
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            SettingRow(
-                title = "关于本应用",
-                subtitle = "查看版本信息和版权声明",
-                icon = Icons.Outlined.Info,
-                onClick = { showAbout = true },
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            SettingsGroup(title = "通用") {
+                SettingsRow(
+                    icon = Icons.Outlined.LocationCity,
+                    title = "城市选择",
+                    subtitle = state.cityName ?: "未选择",
+                    onClick = onPickCity,
+                )
+                SettingsRow(
+                    icon = Icons.Outlined.Home,
+                    title = "应用开屏页",
+                    subtitle = if (state.startDestination == START_DESTINATION_FAVORITES) {
+                        "收藏"
+                    } else {
+                        "附近（默认）"
+                    },
+                    onClick = { showStartPicker = true },
+                )
+            }
+
+            SettingsGroup(title = "关于") {
+                SettingsRow(
+                    icon = Icons.Outlined.Info,
+                    title = "关于本应用",
+                    subtitle = "查看版本信息和版权声明",
+                    onClick = { showAbout = true },
+                )
+            }
         }
     }
 
@@ -112,6 +125,62 @@ fun SettingsScreen(onPickCity: () -> Unit) {
                 showStartPicker = false
             },
             onDismiss = { showStartPicker = false },
+        )
+    }
+}
+
+@Composable
+private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 4.dp),
+            )
+            Column(content = content)
+        }
+    }
+}
+
+@Composable
+private fun SettingsRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.width(18.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -220,40 +289,4 @@ private fun AboutDialog(onDismiss: () -> Unit) {
             }
         },
     )
-}
-
-@Composable
-private fun SettingRow(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-        )
-        Spacer(Modifier.width(16.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
 }

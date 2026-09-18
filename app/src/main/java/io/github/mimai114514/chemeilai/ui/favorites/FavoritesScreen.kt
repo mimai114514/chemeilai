@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -266,32 +267,18 @@ private fun LineCard(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            LineBadge(text = favorite.lineName.orEmpty(), isFavorite = true)
-            Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
+                LineBadge(text = favorite.lineName.orEmpty(), isFavorite = true)
+                Spacer(Modifier.height(6.dp))
                 Text(
-                    text = status.stationName ?: status.directionLabel ?: "点击查看线路",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
+                    text = lineSummary(status),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                val subtitle = buildList {
-                    status.directionLabel?.takeIf { status.stationName != null }?.let { add(it) }
-                    status.distanceMeters?.let { add("最近 $it 米") }
-                    if (status.stationName == null) add("无法定位，点击查看线路")
-                }.filter { it.isNotBlank() }.joinToString(" · ")
-                if (subtitle.isNotBlank()) {
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(12.dp))
             Text(
                 text = status.etaText ?: "—",
                 style = MaterialTheme.typography.titleMedium,
@@ -301,5 +288,16 @@ private fun LineCard(
                 modifier = Modifier.widthIn(max = 96.dp),
             )
         }
+    }
+}
+
+/** 开往（终点站）· 最近 xx */
+private fun lineSummary(status: FavoriteLineStatus): String = buildString {
+    val destination = status.endName ?: status.directionLabel ?: status.favorite.lineName
+    append("开往 ")
+    append(destination?.takeIf { it.isNotBlank() } ?: "—")
+    status.stationName?.takeIf { it.isNotBlank() }?.let {
+        append(" · 最近 ")
+        append(it)
     }
 }

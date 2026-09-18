@@ -207,25 +207,21 @@ private fun TriangleMark(up: Boolean) {
 fun LineBadge(text: String, isFavorite: Boolean = false) {
     val container = if (isFavorite) FavoriteBadgeContainer else MaterialTheme.colorScheme.primaryContainer
     val content = if (isFavorite) FavoriteBadgeContent else MaterialTheme.colorScheme.onPrimaryContainer
-    // 宽度按 3~6 个字符计算，短编号也占满最小宽度，超长省略
-    val charCount = text.length.coerceIn(3, 6)
-    val badgeWidth = (charCount * 12).dp + 12.dp
+    // 宽度自适应文字：短编号占满最小宽度，长名最多到最大宽度后才省略
     Surface(
         color = container,
         contentColor = content,
         shape = MaterialTheme.shapes.small,
-        modifier = Modifier.width(badgeWidth),
+        modifier = Modifier.widthIn(min = MIN_BADGE_WIDTH, max = MAX_BADGE_WIDTH),
     ) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 6.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = text,
-                fontSize = 12.sp,
-                lineHeight = 15.sp,
+                fontSize = 13.sp,
+                lineHeight = 16.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
@@ -234,6 +230,9 @@ fun LineBadge(text: String, isFavorite: Boolean = false) {
         }
     }
 }
+
+private val MIN_BADGE_WIDTH = 52.dp
+private val MAX_BADGE_WIDTH = 104.dp
 
 @Composable
 fun EtaBadge(etaText: String?) {
