@@ -1,11 +1,13 @@
 package io.github.mimai114514.chemeilai.ui.common
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -15,15 +17,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import io.github.mimai114514.chemeilai.data.model.LineDirection
 import io.github.mimai114514.chemeilai.data.model.StationLineGroup
+
+/** 收藏线路固定使用金黄色徽章（不随主题/动态取色变化）。 */
+private val FavoriteBadgeContainer = Color(0xFFFFC107)
+private val FavoriteBadgeContent = Color(0xFF3F2E00)
 
 /**
  * 全局换向：不换向时取 ETA 最近的方向，换向后取另一方向（只有一个方向时保持原样）。
@@ -44,71 +48,78 @@ fun StationLineRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 76.dp)
             .clickable { onClick(direction) }
-            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             LineBadge(text = group.displayName, isFavorite = group.isFavorite)
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(6.dp))
             Text(
                 text = directionSummary(direction),
                 style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
         Spacer(Modifier.width(12.dp))
-        EtaBadge(direction.etaText)
-    }
-}
-
-/** 方向 + 下一站 +（若有）状态文案，合成一行小字；状态文案保持错误色。 */
-@Composable
-private fun directionSummary(direction: LineDirection): AnnotatedString {
-    val errorColor = MaterialTheme.colorScheme.error
-    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
-    return buildAnnotatedString {
-        withStyle(SpanStyle(color = mutedColor)) {
-            append(listOfNotNull(direction.startName, direction.endName).joinToString(" → "))
-            direction.nextStationName.takeIf { it.isNotBlank() }?.let {
-                append(" · 下一站 ")
-                append(it)
-            }
-            direction.desc?.takeIf { it.isNotBlank() }?.let {
-                append(" · ")
-                withStyle(SpanStyle(color = errorColor)) { append(it) }
+        Column(horizontalAlignment = Alignment.End) {
+            EtaBadge(direction.etaText)
+            direction.desc?.takeIf { it.isNotBlank() }?.let { desc ->
+                Text(
+                    text = desc,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 120.dp),
+                )
             }
         }
     }
 }
 
+/** 开往（终点站）· 下一站 xx */
+private fun directionSummary(direction: LineDirection): String = buildString {
+    append("开往 ")
+    append(direction.endName?.takeIf { it.isNotBlank() } ?: "终点站")
+    direction.nextStationName.takeIf { it.isNotBlank() }?.let {
+        append(" · 下一站 ")
+        append(it)
+    }
+}
+
 @Composable
 fun LineBadge(text: String, isFavorite: Boolean = false) {
-    val container = if (isFavorite) {
-        MaterialTheme.colorScheme.tertiaryContainer
-    } else {
-        MaterialTheme.colorScheme.primaryContainer
-    }
-    val content = if (isFavorite) {
-        MaterialTheme.colorScheme.onTertiaryContainer
-    } else {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    }
+    val container = if (isFavorite) FavoriteBadgeContainer else MaterialTheme.colorScheme.primaryContainer
+    val content = if (isFavorite) FavoriteBadgeContent else MaterialTheme.colorScheme.onPrimaryContainer
+    // 宽度按 3~6 个字符计算，短编号也占满最小宽度，超长省略
+    val charCount = text.length.coerceIn(3, 6)
+    val badgeWidth = (charCount * 16).dp + 24.dp
     Surface(
         color = container,
         contentColor = content,
-        shape = MaterialTheme.shapes.small,
-        modifier = Modifier.widthIn(min = 60.dp, max = 110.dp),
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.width(badgeWidth),
     ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
