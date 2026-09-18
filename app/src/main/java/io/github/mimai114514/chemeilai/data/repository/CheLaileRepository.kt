@@ -495,12 +495,13 @@ class CheLaileRepository(
     }
 
     private fun displayLineName(lineNo: String?, name: String?): String {
-        val no = lineNo?.takeIf { it.isNotBlank() }
-        val display = name?.takeIf { it.isNotBlank() }
-        if (no == null) return display.orEmpty()
-        if (display == null) return no
-        val looksInternalCode = no.length >= 6 && no.all { it.isDigit() }
-        return if (looksInternalCode) display else no
+        val no = lineNo?.trim().orEmpty()
+        val label = name?.trim().orEmpty()
+        if (no.isEmpty()) return label
+        if (label.isEmpty()) return no
+        val looksInternalCode = no.first().lowercaseChar() == 'r' ||
+            (no.length >= 6 && no.all { it.isDigit() })
+        return if (looksInternalCode) label else no
     }
 
     private suspend fun sharedParams(

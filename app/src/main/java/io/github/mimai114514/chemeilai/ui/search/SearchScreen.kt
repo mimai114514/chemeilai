@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -22,7 +23,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -30,7 +30,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -48,7 +47,6 @@ import io.github.mimai114514.chemeilai.data.model.Station
 import io.github.mimai114514.chemeilai.ui.common.formatDistance
 import io.github.mimai114514.chemeilai.ui.common.rememberAppContainer
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
     onStationClick: (Station) -> Unit,
@@ -63,63 +61,65 @@ fun SearchScreen(
         viewModel.refreshCity()
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    OutlinedTextField(
-                        value = state.query,
-                        onValueChange = viewModel::onQueryChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("搜索线路、站点、地点") },
-                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                        trailingIcon = {
-                            if (state.query.isNotEmpty()) {
-                                IconButton(onClick = { viewModel.onQueryChange("") }) {
-                                    Icon(Icons.Filled.Clear, contentDescription = "清空")
-                                }
-                            }
-                        },
-                        singleLine = true,
-                        shape = MaterialTheme.shapes.extraLarge,
-                    )
-                },
-            )
-        },
-    ) { padding ->
-        Box(
+    Scaffold { padding ->
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            val result = state.result
-            when {
-                state.cityResolved && state.cityName == null -> CityRequired(onPickCity)
+            OutlinedTextField(
+                value = state.query,
+                onValueChange = viewModel::onQueryChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                placeholder = { Text("搜索线路、站点、地点") },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (state.query.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.onQueryChange("") }) {
+                            Icon(Icons.Filled.Clear, contentDescription = "清空")
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = MaterialTheme.shapes.extraLarge,
+            )
 
-                state.query.isBlank() -> Hint(
-                    "当前城市：${state.cityName.orEmpty()}\n输入线路号、站点名称或地点开始搜索",
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
+                val result = state.result
+                when {
+                    state.cityResolved && state.cityName == null -> CityRequired(onPickCity)
 
-                state.loading && result == null -> Box(
-                    Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) { CircularProgressIndicator() }
+                    state.query.isBlank() -> Hint(
+                        "当前城市：${state.cityName.orEmpty()}\n输入线路号、站点名称或地点开始搜索",
+                    )
 
-                state.error != null -> Box(
-                    Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) { Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error) }
+                    state.loading && result == null -> Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) { CircularProgressIndicator() }
 
-                result != null && result.isEmpty -> Box(
-                    Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) { Text("没有找到相关结果", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    state.error != null -> Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) { Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error) }
 
-                result != null -> SearchResults(
-                    result = result,
-                    onStationClick = onStationClick,
-                    onLineClick = onLineClick,
-                )
+                    result != null && result.isEmpty -> Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) { Text("没有找到相关结果", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+
+                    result != null -> SearchResults(
+                        result = result,
+                        onStationClick = onStationClick,
+                        onLineClick = onLineClick,
+                    )
+                }
             }
         }
     }
@@ -133,7 +133,7 @@ private fun SearchResults(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (result.lines.isNotEmpty()) {
@@ -264,11 +264,14 @@ private fun LineBadge(text: String) {
         color = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         shape = MaterialTheme.shapes.small,
+        modifier = Modifier.widthIn(max = 150.dp),
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
         )
     }
