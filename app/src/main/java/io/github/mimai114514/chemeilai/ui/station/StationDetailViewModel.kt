@@ -18,13 +18,14 @@ import kotlinx.coroutines.launch
 
 data class StationDetailUiState(
     val loading: Boolean = true,
+    val refreshing: Boolean = false,
     val sId: String = "",
     val name: String = "",
     val distanceMeters: Int? = null,
     val lines: List<StationLineGroup> = emptyList(),
     val error: String? = null,
     val isFavorite: Boolean = false,
-    val selections: Map<String, Int> = emptyMap(),
+    val reversed: Boolean = false,
 )
 
 class StationDetailViewModel(
@@ -43,7 +44,8 @@ class StationDetailViewModel(
 
     fun load() {
         viewModelScope.launch {
-            _state.update { it.copy(loading = true, error = null) }
+            val hasContent = _state.value.lines.isNotEmpty()
+            _state.update { it.copy(loading = !hasContent, refreshing = hasContent, error = null) }
             val location = locationProvider.lastKnown()
             runCatching {
                 repository.stationDetail(
@@ -57,6 +59,7 @@ class StationDetailViewModel(
                     _state.update {
                         it.copy(
                             loading = false,
+                            refreshing = false,
                             sId = detail.sId,
                             name = detail.name,
                             distanceMeters = detail.distanceMeters,
@@ -67,18 +70,18 @@ class StationDetailViewModel(
                 }
                 .onFailure { throwable ->
                     _state.update {
-                        it.copy(loading = false, error = throwable.message ?: "加载失败")
+                        if (hasContent) {
+                            it.copy(refreshing = false)
+                        } else {
+                            it.copy(loading = false, refreshing = false, error = throwable.message ?: "加载失败")
+                        }
                     }
                 }
         }
     }
 
-    fun cycleDirection(group: StationLineGroup) {
-        if (group.directions.size < 2) return
-        val current = _state.value.selections[group.key] ?: group.defaultDirection()?.direction
-        val index = group.directions.indexOfFirst { it.direction == current }.coerceAtLeast(0)
-        val next = group.directions[(index + 1) % group.directions.size].direction
-        _state.update { it.copy(selections = it.selections + (group.key to next)) }
+    fun toggleDirection() {
+        _state.update { it.copy(reversed = !it.reversed) }
     }
 
     fun toggleFavorite() {

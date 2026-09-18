@@ -6,7 +6,6 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.mimai114514.chemeilai.AppContainer
 import io.github.mimai114514.chemeilai.data.model.NearbyStop
-import io.github.mimai114514.chemeilai.data.model.StationLineGroup
 import io.github.mimai114514.chemeilai.data.repository.CheLaileRepository
 import io.github.mimai114514.chemeilai.location.LocationProvider
 import io.github.mimai114514.chemeilai.location.LocationResult
@@ -18,13 +17,14 @@ import kotlinx.coroutines.launch
 
 data class NearbyUiState(
     val loading: Boolean = true,
+    val refreshing: Boolean = false,
     val cityName: String? = null,
     val manualCity: Boolean = false,
     val stops: List<NearbyStop> = emptyList(),
     val error: String? = null,
     val permissionRequired: Boolean = false,
     val servicesDisabled: Boolean = false,
-    val selections: Map<String, Int> = emptyMap(),
+    val reversed: Boolean = false,
 )
 
 class NearbyViewModel(
@@ -37,9 +37,11 @@ class NearbyViewModel(
 
     fun refresh() {
         viewModelScope.launch {
+            val hasContent = _state.value.stops.isNotEmpty() || _state.value.manualCity
             _state.update {
                 it.copy(
-                    loading = true,
+                    loading = !hasContent && !it.manualCity,
+                    refreshing = hasContent,
                     error = null,
                     permissionRequired = false,
                     servicesDisabled = false,
@@ -51,6 +53,7 @@ class NearbyViewModel(
                 _state.update {
                     it.copy(
                         loading = false,
+                        refreshing = false,
                         cityName = manual.cityName,
                         manualCity = true,
                         stops = emptyList(),
@@ -60,25 +63,22 @@ class NearbyViewModel(
             }
 
             if (!locationProvider.hasPermission()) {
-                _state.update { it.copy(loading = false, manualCity = false, permissionRequired = true) }
+                _state.update {
+                    it.copy(loading = false, refreshing = false, manualCity = false, permissionRequired = true)
+                }
                 return@launch
             }
 
             when (val result = locationProvider.currentLocation()) {
                 LocationResult.PermissionMissing ->
-                    _state.update { it.copy(loading = false, permissionRequired = true) }
-
-                LocationResult.ServicesDisabled ->
                     _state.update {
-                        it.copy(
-                            loading = false,
-                            servicesDisabled = true,
-                            error = "系统定位已关闭，请在系统设置中开启定位",
-                        )
+                        it.copy(loading = false, refreshing = false, permissionRequired = true)
                     }
 
-                LocationResult.Unavailable ->
-                    _state.update { it.copy(loading = false, error = "无法获取当前位置") }
+                LocationResult.ServicesDisabled ->
+                    fail("系统定位已关闭，请在系统设置中开启定位", servicesDisabled = true)
+
+                LocationResult.Unavailable -> fail("无法获取当前位置")
 
                 is LocationResult.Success ->
                     runCatching {
@@ -88,19 +88,20 @@ class NearbyViewModel(
                             _state.update {
                                 it.copy(
                                     loading = false,
+                                    refreshing = false,
                                     manualCity = false,
                                     cityName = nearby.city.cityName,
                                     stops = nearby.stops,
                                 )
                             }
                         }
-                        .onFailure { throwable ->
-                            _state.update {
-                                it.copy(loading = false, error = throwable.message ?: "加载失败")
-                            }
-                        }
+                        .onFailure { throwable -> fail(throwable.message ?: "加载失败") }
             }
         }
+    }
+
+    fun toggleDirection() {
+        _state.update { it.copy(reversed = !it.reversed) }
     }
 
     fun useAutoLocation() {
@@ -110,18 +111,19 @@ class NearbyViewModel(
         }
     }
 
-    fun cycleDirection(stopId: String, group: StationLineGroup) {
-        if (group.directions.size < 2) return
-        val key = selectionKey(stopId, group.key)
-        val current = _state.value.selections[key] ?: group.defaultDirection()?.direction
-        val index = group.directions.indexOfFirst { it.direction == current }.coerceAtLeast(0)
-        val next = group.directions[(index + 1) % group.directions.size].direction
-        _state.update { it.copy(selections = it.selections + (key to next)) }
+    /** 有内容时后台刷新失败就保留旧数据，不打扰用户。 */
+    private fun fail(message: String, servicesDisabled: Boolean = false) {
+        val hasContent = _state.value.stops.isNotEmpty()
+        _state.update {
+            if (hasContent) {
+                it.copy(refreshing = false)
+            } else {
+                it.copy(loading = false, refreshing = false, servicesDisabled = servicesDisabled, error = message)
+            }
+        }
     }
 
     companion object {
-        fun selectionKey(stopId: String, groupKey: String): String = "$stopId|$groupKey"
-
         fun factory(container: AppContainer) = viewModelFactory {
             initializer { NearbyViewModel(container.repository, container.locationProvider) }
         }

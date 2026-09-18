@@ -14,6 +14,7 @@ import io.github.mimai114514.chemeilai.data.model.CityLine
 import io.github.mimai114514.chemeilai.data.model.CityOption
 import io.github.mimai114514.chemeilai.data.model.Favorite
 import io.github.mimai114514.chemeilai.data.model.FavoriteType
+import io.github.mimai114514.chemeilai.data.model.LineArrival
 import io.github.mimai114514.chemeilai.data.model.LineDirection
 import io.github.mimai114514.chemeilai.data.model.LineLocator
 import io.github.mimai114514.chemeilai.data.model.Nearby
@@ -69,6 +70,8 @@ class CheLaileRepository(
 
     @Volatile
     private var cityLinesCache: List<CityLine>? = null
+
+    private val routeStationsCache = java.util.concurrent.ConcurrentHashMap<String, List<RouteStation>>()
 
     suspend fun manualCity(): City? = session.manualCity()?.let { (id, name) ->
         City(id, name.ifBlank { null })
@@ -157,6 +160,7 @@ class CheLaileRepository(
         lat: Double? = null,
         lng: Double? = null,
     ): List<RouteStation> {
+        routeStationsCache[lineId]?.let { return it }
         val dto: LineRouteDto = plain(
             call = api::lineRoute,
             biz = mapOf("lineId" to lineId),
@@ -164,7 +168,61 @@ class CheLaileRepository(
             lat = lat,
             lng = lng,
         )
-        return dto.stations.mapNotNull { it.toRouteStation() }
+        val stations = dto.stations.mapNotNull { it.toRouteStation() }
+        if (stations.isNotEmpty()) routeStationsCache[lineId] = stations
+        return stations
+    }
+
+    /** 找到该线路离 (lat,lng) 最近的站台，并返回该站该方向的到达信息。 */
+    suspend fun lineArrivalAtNearestStation(
+        lineName: String,
+        lat: Double,
+        lng: Double,
+    ): LineArrival? {
+        val directions = lineDirections(lineName)
+        if (directions.isEmpty()) return null
+
+        var bestDirection: CityLine? = null
+        var bestStation: RouteStation? = null
+        var bestDistance = Double.MAX_VALUE
+        for (direction in directions) {
+            val stations = runCatching { lineRouteStations(direction.lineId, lat, lng) }.getOrNull().orEmpty()
+            for (station in stations) {
+                val stationId = station.sId ?: continue
+                val stationLat = station.lat ?: continue
+                val stationLng = station.lng ?: continue
+                val distance = metersBetween(lat, lng, stationLat, stationLng)
+                if (stationId.isNotBlank() && distance < bestDistance) {
+                    bestDistance = distance
+                    bestDirection = direction
+                    bestStation = station
+                }
+            }
+        }
+        val direction = bestDirection ?: return null
+        val station = bestStation ?: return null
+        val stationId = station.sId ?: return null
+
+        // stationDetail 里的 lineNo 才是用于定位的原始编码，先拿它再查实时
+        val detail = runCatching { stationDetail(stationId, lat, lng) }.getOrNull()
+        val rawLineNo = detail?.lines
+            ?.firstOrNull { it.displayName == lineName }
+            ?.directions
+            ?.firstOrNull { it.direction == direction.direction }
+            ?.lineNo
+            ?: direction.lineNo
+
+        val realtime = runCatching { realtime(stationId, rawLineNo, direction.direction, lat, lng) }.getOrNull()
+        return LineArrival(
+            stationId = stationId,
+            stationName = realtime?.stationName ?: station.name,
+            lineNo = rawLineNo,
+            direction = direction.direction,
+            distanceMeters = bestDistance.roundToInt(),
+            etaMinutes = realtime?.buses?.firstOrNull()?.etaMinutes,
+            tip = realtime?.tip,
+            buses = realtime?.buses.orEmpty(),
+        )
     }
 
     suspend fun resolveCity(lat: Double, lng: Double): City {

@@ -149,6 +149,18 @@ data class CityLine(
     val price: String?,
 )
 
+/** 某条线路离用户最近站台的到达情况，用于收藏页展示。 */
+data class LineArrival(
+    val stationId: String,
+    val stationName: String,
+    val lineNo: String,
+    val direction: Int,
+    val distanceMeters: Int,
+    val etaMinutes: Int?,
+    val tip: String?,
+    val buses: List<BusEta>,
+)
+
 data class LineDetail(
     val lineId: String,
     val displayName: String,

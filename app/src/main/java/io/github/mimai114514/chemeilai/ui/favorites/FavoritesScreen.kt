@@ -11,17 +11,20 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -36,7 +39,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mimai114514.chemeilai.data.model.Favorite
-import io.github.mimai114514.chemeilai.data.model.FavoriteType
 import io.github.mimai114514.chemeilai.ui.common.LineBadge
 import io.github.mimai114514.chemeilai.ui.common.rememberAppContainer
 
@@ -44,17 +46,23 @@ import io.github.mimai114514.chemeilai.ui.common.rememberAppContainer
 @Composable
 fun FavoritesScreen(
     onStationClick: (Favorite) -> Unit,
-    onLineClick: (Favorite) -> Unit,
+    onLineClick: (FavoriteLineStatus) -> Unit,
 ) {
     val container = rememberAppContainer()
     val viewModel: FavoritesViewModel = viewModel(factory = FavoritesViewModel.factory(container))
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    val stations = state.favorites.filter { it.type == FavoriteType.STATION }
-    val lines = state.favorites.filter { it.type == FavoriteType.LINE }
-
     Scaffold(
-        topBar = { TopAppBar(title = { Text("收藏") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("收藏") },
+                actions = {
+                    IconButton(onClick = viewModel::refresh) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "刷新")
+                    }
+                },
+            )
+        },
     ) { padding ->
         Box(
             modifier = Modifier
@@ -67,7 +75,7 @@ fun FavoritesScreen(
                     contentAlignment = Alignment.Center,
                 ) { CircularProgressIndicator() }
 
-                state.favorites.isEmpty() -> Box(
+                state.isEmpty -> Box(
                     Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -84,27 +92,35 @@ fun FavoritesScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (stations.isNotEmpty()) {
+                    if (state.stationFavorites.isNotEmpty()) {
                         item { SectionHeader("收藏站点") }
-                        items(stations, key = { it.id }) { favorite ->
-                            FavoriteCard(
+                        items(state.stationFavorites, key = { it.id }) { favorite ->
+                            StationCard(
                                 favorite = favorite,
                                 onClick = { onStationClick(favorite) },
                                 onRemove = { viewModel.remove(favorite) },
                             )
                         }
                     }
-                    if (lines.isNotEmpty()) {
+                    if (state.lineFavorites.isNotEmpty()) {
                         item { SectionHeader("收藏线路") }
-                        items(lines, key = { it.id }) { favorite ->
-                            FavoriteCard(
-                                favorite = favorite,
-                                onClick = { onLineClick(favorite) },
-                                onRemove = { viewModel.remove(favorite) },
+                        items(state.lineFavorites, key = { it.favorite.id }) { status ->
+                            LineCard(
+                                status = status,
+                                onClick = { onLineClick(status) },
+                                onRemove = { viewModel.remove(status.favorite) },
                             )
                         }
                     }
                 }
+            }
+
+            if (state.refreshing) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter),
+                )
             }
         }
     }
@@ -122,12 +138,11 @@ private fun SectionHeader(title: String) {
 }
 
 @Composable
-private fun FavoriteCard(
+private fun StationCard(
     favorite: Favorite,
     onClick: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    val isStation = favorite.type == FavoriteType.STATION
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -138,39 +153,88 @@ private fun FavoriteCard(
             modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (isStation) {
+            Icon(
+                imageVector = Icons.Filled.Place,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.width(24.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = favorite.stationName.orEmpty(),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onRemove) {
                 Icon(
-                    imageVector = Icons.Filled.Place,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.width(24.dp),
+                    Icons.Filled.Delete,
+                    contentDescription = "删除收藏",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            } else {
-                LineBadge(favorite.lineName.orEmpty())
             }
+        }
+    }
+}
+
+@Composable
+private fun LineCard(
+    status: FavoriteLineStatus,
+    onClick: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    val favorite = status.favorite
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LineBadge(favorite.lineName.orEmpty())
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (isStation) favorite.stationName.orEmpty() else favorite.lineName.orEmpty(),
+                    text = status.stationName
+                        ?: listOfNotNull(favorite.startName, favorite.endName).joinToString(" → ")
+                            .ifBlank { "点击查看线路" },
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (!isStation) {
-                    val subtitle = listOfNotNull(favorite.startName, favorite.endName)
-                        .joinToString(" → ")
-                    if (subtitle.isNotBlank()) {
-                        Text(
-                            text = subtitle,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                val subtitle = buildList {
+                    if (status.stationName != null) {
+                        add(listOfNotNull(favorite.startName, favorite.endName).joinToString(" → "))
+                    } else {
+                        add("无法定位，点击查看线路")
                     }
-                }
+                    if (status.distanceMeters != null) {
+                        add("最近 ${status.distanceMeters} 米")
+                    }
+                }.filter { it.isNotBlank() }.joinToString(" · ")
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = status.etaText ?: "—",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                modifier = Modifier.widthIn(max = 96.dp),
+            )
             IconButton(onClick = onRemove) {
                 Icon(
                     Icons.Filled.Delete,

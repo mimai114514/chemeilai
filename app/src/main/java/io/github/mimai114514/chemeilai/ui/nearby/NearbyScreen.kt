@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -31,6 +32,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -48,7 +50,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mimai114514.chemeilai.data.model.LineDirection
 import io.github.mimai114514.chemeilai.data.model.NearbyStop
-import io.github.mimai114514.chemeilai.data.model.StationLineGroup
 import io.github.mimai114514.chemeilai.ui.common.StationLineRow
 import io.github.mimai114514.chemeilai.ui.common.formatDistance
 import io.github.mimai114514.chemeilai.ui.common.rememberAppContainer
@@ -89,6 +90,17 @@ fun NearbyScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = viewModel::toggleDirection) {
+                        Icon(
+                            imageVector = Icons.Filled.SwapHoriz,
+                            contentDescription = "全局换向",
+                            tint = if (state.reversed) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
                     IconButton(onClick = onPickCity) {
                         Icon(Icons.Filled.LocationCity, contentDescription = "选择城市")
                     }
@@ -140,10 +152,17 @@ fun NearbyScreen(
 
                 else -> StopList(
                     stops = state.stops,
-                    selections = state.selections,
+                    reversed = state.reversed,
                     onStationClick = onStationClick,
                     onLineClick = onLineClick,
-                    onSwapDirection = viewModel::cycleDirection,
+                )
+            }
+
+            if (state.refreshing) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter),
                 )
             }
         }
@@ -196,10 +215,9 @@ private fun ManualCityPanel(
 @Composable
 private fun StopList(
     stops: List<NearbyStop>,
-    selections: Map<String, Int>,
+    reversed: Boolean,
     onStationClick: (NearbyStop) -> Unit,
     onLineClick: (NearbyStop, LineDirection) -> Unit,
-    onSwapDirection: (String, StationLineGroup) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -209,10 +227,9 @@ private fun StopList(
         items(stops, key = { it.sId }) { stop ->
             StopCard(
                 stop = stop,
-                selections = selections,
+                reversed = reversed,
                 onStationClick = onStationClick,
                 onLineClick = onLineClick,
-                onSwapDirection = onSwapDirection,
             )
         }
     }
@@ -221,10 +238,9 @@ private fun StopList(
 @Composable
 private fun StopCard(
     stop: NearbyStop,
-    selections: Map<String, Int>,
+    reversed: Boolean,
     onStationClick: (NearbyStop) -> Unit,
     onLineClick: (NearbyStop, LineDirection) -> Unit,
-    onSwapDirection: (String, StationLineGroup) -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -266,8 +282,7 @@ private fun StopCard(
                 stop.lines.forEach { group ->
                     StationLineRow(
                         group = group,
-                        selectedDirection = selections[NearbyViewModel.selectionKey(stop.sId, group.key)],
-                        onSwapDirection = { onSwapDirection(stop.sId, group) },
+                        reversed = reversed,
                         onClick = { direction -> onLineClick(stop, direction) },
                     )
                 }

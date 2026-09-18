@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -66,6 +67,17 @@ fun StationDetailScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = viewModel::toggleDirection) {
+                        Icon(
+                            imageVector = Icons.Filled.SwapHoriz,
+                            contentDescription = "全局换向",
+                            tint = if (state.reversed) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
                     IconButton(onClick = viewModel::toggleFavorite) {
                         Icon(
                             imageVector = if (state.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
@@ -117,8 +129,7 @@ fun StationDetailScreen(
                             Column {
                                 StationLineRow(
                                     group = group,
-                                    selectedDirection = state.selections[group.key],
-                                    onSwapDirection = { viewModel.cycleDirection(group) },
+                                    reversed = state.reversed,
                                     onClick = { direction ->
                                         onLineClick(state.sId.ifBlank { stationId }, direction)
                                     },

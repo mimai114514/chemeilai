@@ -11,9 +11,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -26,24 +24,27 @@ import androidx.compose.ui.unit.dp
 import io.github.mimai114514.chemeilai.data.model.LineDirection
 import io.github.mimai114514.chemeilai.data.model.StationLineGroup
 
-/** 同一线路当前展示的方向：优先用用户选择的方向，否则用默认（ETA 最近）。 */
-fun StationLineGroup.resolveDirection(selectedDirection: Int?): LineDirection? =
-    selectedDirection?.let { target -> directions.firstOrNull { it.direction == target } }
-        ?: defaultDirection()
+/**
+ * 全局换向：不换向时取 ETA 最近的方向，换向后取另一方向（只有一个方向时保持原样）。
+ */
+fun StationLineGroup.resolveDisplayDirection(reversed: Boolean): LineDirection? {
+    val normal = defaultDirection()
+    if (!reversed) return normal
+    return directions.firstOrNull { it.direction != normal?.direction } ?: normal
+}
 
 @Composable
 fun StationLineRow(
     group: StationLineGroup,
-    selectedDirection: Int?,
-    onSwapDirection: () -> Unit,
+    reversed: Boolean,
     onClick: (LineDirection) -> Unit,
 ) {
-    val direction = group.resolveDirection(selectedDirection) ?: return
+    val direction = group.resolveDisplayDirection(reversed) ?: return
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick(direction) }
-            .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         LineBadge(group.displayName)
@@ -83,17 +84,6 @@ fun StationLineRow(
         }
         Spacer(Modifier.width(8.dp))
         EtaBadge(direction.etaText)
-        if (group.directions.size > 1) {
-            IconButton(onClick = onSwapDirection) {
-                Icon(
-                    imageVector = Icons.Filled.SwapHoriz,
-                    contentDescription = "切换方向",
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-            }
-        } else {
-            Spacer(Modifier.width(12.dp))
-        }
     }
 }
 

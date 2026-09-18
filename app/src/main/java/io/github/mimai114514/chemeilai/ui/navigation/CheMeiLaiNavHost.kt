@@ -130,15 +130,27 @@ fun CheMeiLaiNavHost() {
                             )
                         }
                     },
-                    onLineClick = { favorite ->
-                        navController.navigate(
-                            Routes.line(
-                                lineName = favorite.lineName.orEmpty(),
-                                cityId = favorite.cityId,
-                                direction = favorite.direction,
-                                lineId = favorite.lineId,
-                            ),
-                        )
+                    onLineClick = { status ->
+                        val favorite = status.favorite
+                        if (status.ready && status.stationId != null && status.lineNo != null && status.direction != null) {
+                            navController.navigate(
+                                Routes.realtime(
+                                    status.stationId,
+                                    status.lineNo,
+                                    status.direction,
+                                    favorite.lineName.orEmpty(),
+                                ),
+                            )
+                        } else {
+                            navController.navigate(
+                                Routes.line(
+                                    lineName = favorite.lineName.orEmpty(),
+                                    cityId = favorite.cityId,
+                                    direction = favorite.direction,
+                                    lineId = favorite.lineId,
+                                ),
+                            )
+                        }
                     },
                 )
             }
