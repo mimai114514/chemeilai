@@ -1,5 +1,6 @@
 package io.github.mimai114514.chemeilai.ui.common
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,10 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.ArrowDropUp
-import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -26,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,7 +57,7 @@ fun StationLineRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick(direction) }
-            .padding(start = 16.dp, end = 16.dp, top = 7.dp, bottom = 7.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 9.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -80,15 +79,26 @@ fun StationLineRow(
     }
 }
 
-/** 开往（终点站）· 下一站 xx */
+/** 开往（终点站）· 下一站 xx；两个站名各最多显示 6 个字。 */
 private fun directionSummary(direction: LineDirection): String = buildString {
     append("开往 ")
-    append(direction.endName?.takeIf { it.isNotBlank() } ?: "终点站")
+    append(shortStationName(direction.endName) ?: "终点站")
     direction.nextStationName.takeIf { it.isNotBlank() }?.let {
         append(" · 下一站 ")
-        append(it)
+        append(shortStationName(it))
     }
 }
+
+private fun shortStationName(name: String?): String? {
+    val trimmed = name?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return if (trimmed.length > MAX_STATION_CHARS) {
+        trimmed.take(MAX_STATION_CHARS) + "…"
+    } else {
+        trimmed
+    }
+}
+
+private const val MAX_STATION_CHARS = 6
 
 /** 车辆信息区：有 ETA 时显示分钟数（必要时前置状态），没有 ETA 时显示状态文案。 */
 @Composable
@@ -138,7 +148,7 @@ fun StationLineList(
 ) {
     var expanded by rememberSaveable(stateKey) { mutableStateOf(false) }
     val visible = if (expanded) lines else lines.take(collapsedCount)
-    Column(modifier = Modifier.padding(bottom = 5.dp)) {
+    Column(modifier = Modifier.padding(bottom = 6.dp)) {
         visible.forEach { group ->
             StationLineRow(
                 group = group,
@@ -156,14 +166,11 @@ fun StationLineList(
                 modifier = Modifier.padding(start = 16.dp, top = 2.dp),
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(
-                        imageVector = if (expanded) Icons.Filled.ArrowDropUp else Icons.Filled.ArrowDropDown,
-                        contentDescription = if (expanded) "收起" else "展开",
-                        modifier = Modifier.size(18.dp),
-                    )
+                    TriangleMark(up = expanded)
+                    Spacer(Modifier.width(5.dp))
                     Text(
                         text = "$hiddenCount",
                         style = MaterialTheme.typography.labelMedium,
@@ -172,6 +179,27 @@ fun StationLineList(
                 }
             }
         }
+    }
+}
+
+/** 自绘实心三角，避免 Material 图标字形的内边距造成左右不对称。 */
+@Composable
+private fun TriangleMark(up: Boolean) {
+    val color = LocalContentColor.current
+    Canvas(modifier = Modifier.size(width = 10.dp, height = 6.dp)) {
+        val path = Path().apply {
+            if (up) {
+                moveTo(size.width / 2f, 0f)
+                lineTo(size.width, size.height)
+                lineTo(0f, size.height)
+            } else {
+                moveTo(0f, 0f)
+                lineTo(size.width, 0f)
+                lineTo(size.width / 2f, size.height)
+            }
+            close()
+        }
+        drawPath(path, color)
     }
 }
 

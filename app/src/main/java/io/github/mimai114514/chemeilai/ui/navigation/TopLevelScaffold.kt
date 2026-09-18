@@ -16,8 +16,8 @@ enum class TopDestination(
     val label: String,
     val icon: ImageVector,
 ) {
-    NEARBY("nearby", "附近", Icons.Filled.NearMe),
     FAVORITES("favorites", "收藏", Icons.Filled.Star),
+    NEARBY("nearby", "附近", Icons.Filled.NearMe),
     SETTINGS("settings", "设置", Icons.Filled.Settings),
 }
 

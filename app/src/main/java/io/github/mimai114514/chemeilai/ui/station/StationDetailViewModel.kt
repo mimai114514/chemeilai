@@ -40,6 +40,11 @@ class StationDetailViewModel(
     val state: StateFlow<StationDetailUiState> = _state.asStateFlow()
 
     init {
+        // 收藏状态先读本地，不等车辆状态请求返回
+        viewModelScope.launch {
+            val favorite = repository.isFavorite(Favorite.stationKey(stationId))
+            _state.update { it.copy(isFavorite = favorite) }
+        }
         load()
         // 收藏变化时立即同步线路行的收藏标记与排序
         viewModelScope.launch {

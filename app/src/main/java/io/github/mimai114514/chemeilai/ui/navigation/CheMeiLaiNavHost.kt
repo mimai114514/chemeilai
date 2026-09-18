@@ -56,7 +56,7 @@ private object Routes {
 }
 
 @Composable
-fun CheMeiLaiNavHost() {
+fun CheMeiLaiNavHost(startDestination: String = Routes.NEARBY) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -91,7 +91,7 @@ fun CheMeiLaiNavHost() {
         )
         NavHost(
             navController = navController,
-            startDestination = Routes.NEARBY,
+            startDestination = startDestination,
             modifier = Modifier.padding(bottom = bottomPadding),
         ) {
             composable(Routes.NEARBY) {
@@ -174,7 +174,7 @@ fun CheMeiLaiNavHost() {
             }
 
             composable(Routes.SETTINGS) {
-                SettingsScreen()
+                SettingsScreen(onPickCity = { navController.navigate(Routes.CITY) })
             }
 
             composable(Routes.CITY) {

@@ -46,14 +46,24 @@ class SessionStore(private val context: Context) {
         }
     }
 
+    /** 应用开屏页：nearby（默认）或 favorites。 */
+    suspend fun startDestination(): String =
+        context.sessionDataStore.data.first()[KEY_START_DESTINATION] ?: START_NEARBY
+
+    suspend fun setStartDestination(value: String) {
+        context.sessionDataStore.edit { it[KEY_START_DESTINATION] = value }
+    }
+
     private fun randomBrowserId(): String {
         val random = (0..0xFFFFFF).random().toString(36).padStart(5, '0')
         return "browser_${System.currentTimeMillis().toString(36)}_$random"
     }
 
     private companion object {
+        const val START_NEARBY = "nearby"
         val KEY_USER_ID = stringPreferencesKey("user_id")
         val KEY_MANUAL_CITY_ID = stringPreferencesKey("manual_city_id")
         val KEY_MANUAL_CITY_NAME = stringPreferencesKey("manual_city_name")
+        val KEY_START_DESTINATION = stringPreferencesKey("start_destination")
     }
 }

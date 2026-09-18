@@ -88,6 +88,10 @@ class CheLaileRepository(
 
     suspend fun clearManualCity() = session.clearManualCity()
 
+    suspend fun startDestination(): String = session.startDestination()
+
+    suspend fun setStartDestination(value: String) = session.setStartDestination(value)
+
     suspend fun allCities(): List<CityOption> {
         allCitiesCache?.let { return it }
         val params = linkedMapOf(
