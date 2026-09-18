@@ -3,6 +3,7 @@ package io.github.mimai114514.chemeilai.ui.nearby
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,13 +14,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocationCity
 import androidx.compose.material.icons.filled.MyLocation
-import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -29,7 +31,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -254,10 +255,10 @@ private fun StopCard(
                     .padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Place,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape),
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
@@ -278,13 +279,14 @@ private fun StopCard(
             }
 
             if (stop.lines.isNotEmpty()) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                stop.lines.forEach { group ->
-                    StationLineRow(
-                        group = group,
-                        reversed = reversed,
-                        onClick = { direction -> onLineClick(stop, direction) },
-                    )
+                Column(modifier = Modifier.padding(bottom = 10.dp)) {
+                    stop.lines.forEach { group ->
+                        StationLineRow(
+                            group = group,
+                            reversed = reversed,
+                            onClick = { direction -> onLineClick(stop, direction) },
+                        )
+                    }
                 }
             }
         }

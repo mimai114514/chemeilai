@@ -2,6 +2,7 @@ package io.github.mimai114514.chemeilai.ui.navigation
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NearMe
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -17,6 +18,7 @@ enum class TopDestination(
 ) {
     NEARBY("nearby", "附近", Icons.Filled.NearMe),
     FAVORITES("favorites", "收藏", Icons.Filled.Star),
+    SETTINGS("settings", "设置", Icons.Filled.Settings),
 }
 
 @Composable

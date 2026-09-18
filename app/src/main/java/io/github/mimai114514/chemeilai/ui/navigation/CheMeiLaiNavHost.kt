@@ -1,15 +1,20 @@
 package io.github.mimai114514.chemeilai.ui.navigation
 
 import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -23,12 +28,16 @@ import io.github.mimai114514.chemeilai.ui.line.LineDetailScreen
 import io.github.mimai114514.chemeilai.ui.nearby.NearbyScreen
 import io.github.mimai114514.chemeilai.ui.realtime.RealtimeScreen
 import io.github.mimai114514.chemeilai.ui.search.SearchScreen
+import io.github.mimai114514.chemeilai.ui.settings.AboutScreen
+import io.github.mimai114514.chemeilai.ui.settings.SettingsScreen
 import io.github.mimai114514.chemeilai.ui.station.StationDetailScreen
 
 private object Routes {
     const val NEARBY = "nearby"
     const val SEARCH = "search"
     const val FAVORITES = "favorites"
+    const val SETTINGS = "settings"
+    const val ABOUT = "about"
     const val CITY = "city"
     const val STATION = "station/{sId}?name={name}"
     const val REALTIME = "realtime/{sId}/{lineNo}/{direction}?name={name}"
@@ -67,17 +76,25 @@ fun CheMeiLaiNavHost() {
 
     Scaffold(
         bottomBar = {
-            if (isTopLevel) {
+            AnimatedVisibility(
+                visible = isTopLevel,
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            ) {
                 CheMeiLaiBottomBar(currentRoute = currentRoute) { destination ->
                     goTopLevel(destination.route)
                 }
             }
         },
     ) { innerPadding ->
+        val bottomPadding by animateDpAsState(
+            targetValue = if (isTopLevel) innerPadding.calculateBottomPadding() else 0.dp,
+            label = "bottomBarPadding",
+        )
         NavHost(
             navController = navController,
             startDestination = Routes.NEARBY,
-            modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()),
+            modifier = Modifier.padding(bottom = bottomPadding),
         ) {
             composable(Routes.NEARBY) {
                 NearbyScreen(
@@ -130,16 +147,19 @@ fun CheMeiLaiNavHost() {
                             )
                         }
                     },
+                    onStationLineClick = { stationId, line ->
+                        navController.navigate(
+                            Routes.realtime(stationId, line.lineNo, line.direction, line.displayName),
+                        )
+                    },
                     onLineClick = { status ->
                         val favorite = status.favorite
-                        if (status.ready && status.stationId != null && status.lineNo != null && status.direction != null) {
+                        val stationId = status.stationId
+                        val lineNo = status.lineNo
+                        val direction = status.direction
+                        if (status.ready && stationId != null && lineNo != null && direction != null) {
                             navController.navigate(
-                                Routes.realtime(
-                                    status.stationId,
-                                    status.lineNo,
-                                    status.direction,
-                                    favorite.lineName.orEmpty(),
-                                ),
+                                Routes.realtime(stationId, lineNo, direction, favorite.lineName.orEmpty()),
                             )
                         } else {
                             navController.navigate(
@@ -153,6 +173,14 @@ fun CheMeiLaiNavHost() {
                         }
                     },
                 )
+            }
+
+            composable(Routes.SETTINGS) {
+                SettingsScreen(onAboutClick = { navController.navigate(Routes.ABOUT) })
+            }
+
+            composable(Routes.ABOUT) {
+                AboutScreen(onBack = { navController.popBackStack() })
             }
 
             composable(Routes.CITY) {

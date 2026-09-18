@@ -1,6 +1,8 @@
 package io.github.mimai114514.chemeilai.ui.favorites
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,14 +12,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -28,9 +32,13 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -39,24 +47,39 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mimai114514.chemeilai.data.model.Favorite
+import io.github.mimai114514.chemeilai.data.model.LineDirection
 import io.github.mimai114514.chemeilai.ui.common.LineBadge
+import io.github.mimai114514.chemeilai.ui.common.StationLineRow
 import io.github.mimai114514.chemeilai.ui.common.rememberAppContainer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FavoritesScreen(
     onStationClick: (Favorite) -> Unit,
+    onStationLineClick: (String, LineDirection) -> Unit,
     onLineClick: (FavoriteLineStatus) -> Unit,
 ) {
     val container = rememberAppContainer()
     val viewModel: FavoritesViewModel = viewModel(factory = FavoritesViewModel.factory(container))
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var deleteTarget by remember { mutableStateOf<Favorite?>(null) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("收藏") },
                 actions = {
+                    IconButton(onClick = viewModel::toggleDirection) {
+                        Icon(
+                            imageVector = Icons.Filled.SwapHoriz,
+                            contentDescription = "全局换向",
+                            tint = if (state.reversed) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
                     IconButton(onClick = viewModel::refresh) {
                         Icon(Icons.Filled.Refresh, contentDescription = "刷新")
                     }
@@ -92,23 +115,25 @@ fun FavoritesScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (state.stationFavorites.isNotEmpty()) {
+                    if (state.stations.isNotEmpty()) {
                         item { SectionHeader("收藏站点") }
-                        items(state.stationFavorites, key = { it.id }) { favorite ->
+                        items(state.stations, key = { it.id }) { status ->
                             StationCard(
-                                favorite = favorite,
-                                onClick = { onStationClick(favorite) },
-                                onRemove = { viewModel.remove(favorite) },
+                                status = status,
+                                reversed = state.reversed,
+                                onClick = { onStationClick(status.favorite) },
+                                onLineClick = onStationLineClick,
+                                onLongClick = { deleteTarget = status.favorite },
                             )
                         }
                     }
-                    if (state.lineFavorites.isNotEmpty()) {
+                    if (state.lines.isNotEmpty()) {
                         item { SectionHeader("收藏线路") }
-                        items(state.lineFavorites, key = { it.favorite.id }) { status ->
+                        items(state.lines, key = { it.favorite.id }) { status ->
                             LineCard(
                                 status = status,
                                 onClick = { onLineClick(status) },
-                                onRemove = { viewModel.remove(status.favorite) },
+                                onLongClick = { deleteTarget = status.favorite },
                             )
                         }
                     }
@@ -124,6 +149,27 @@ fun FavoritesScreen(
             }
         }
     }
+
+    deleteTarget?.let { favorite ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("删除收藏？") },
+            text = {
+                Text(favorite.stationName ?: favorite.lineName ?: favorite.id)
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.remove(favorite)
+                        deleteTarget = null
+                    },
+                ) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("取消") }
+            },
+        )
+    }
 }
 
 @Composable
@@ -138,93 +184,112 @@ private fun SectionHeader(title: String) {
 }
 
 @Composable
-private fun StationCard(
-    favorite: Favorite,
-    onClick: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    Card(
+private fun StationDot() {
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .size(10.dp)
+            .background(MaterialTheme.colorScheme.primary, CircleShape),
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun StationCard(
+    status: FavoriteStationStatus,
+    reversed: Boolean,
+    onClick: () -> Unit,
+    onLineClick: (String, LineDirection) -> Unit,
+    onLongClick: () -> Unit,
+) {
+    val stationId = status.favorite.stationId.orEmpty()
+    Card(
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        Row(
-            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Place,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.width(24.dp),
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = favorite.stationName.orEmpty(),
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            IconButton(onClick = onRemove) {
-                Icon(
-                    Icons.Filled.Delete,
-                    contentDescription = "删除收藏",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                StationDot()
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = status.favorite.stationName.orEmpty(),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                status.distanceMeters?.let { distance ->
+                    Text(
+                        text = "$distance 米",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            if (status.lines.isNotEmpty()) {
+                Column(modifier = Modifier.padding(bottom = 8.dp)) {
+                    status.lines.forEach { group ->
+                        StationLineRow(
+                            group = group,
+                            reversed = reversed,
+                            onClick = { direction -> onLineClick(stationId, direction) },
+                        )
+                    }
+                }
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LineCard(
     status: FavoriteLineStatus,
     onClick: () -> Unit,
-    onRemove: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     val favorite = status.favorite
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
         Row(
-            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+            modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             LineBadge(favorite.lineName.orEmpty())
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = status.stationName
-                        ?: listOfNotNull(favorite.startName, favorite.endName).joinToString(" → ")
-                            .ifBlank { "点击查看线路" },
+                    text = status.stationName ?: status.directionLabel ?: "点击查看线路",
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 val subtitle = buildList {
-                    if (status.stationName != null) {
-                        add(listOfNotNull(favorite.startName, favorite.endName).joinToString(" → "))
-                    } else {
-                        add("无法定位，点击查看线路")
-                    }
-                    if (status.distanceMeters != null) {
-                        add("最近 ${status.distanceMeters} 米")
-                    }
+                    status.directionLabel?.takeIf { status.stationName != null }?.let { add(it) }
+                    status.distanceMeters?.let { add("最近 $it 米") }
+                    if (status.stationName == null) add("无法定位，点击查看线路")
                 }.filter { it.isNotBlank() }.joinToString(" · ")
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Spacer(Modifier.width(8.dp))
             Text(
@@ -235,13 +300,6 @@ private fun LineCard(
                 maxLines = 1,
                 modifier = Modifier.widthIn(max = 96.dp),
             )
-            IconButton(onClick = onRemove) {
-                Icon(
-                    Icons.Filled.Delete,
-                    contentDescription = "删除收藏",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
 }

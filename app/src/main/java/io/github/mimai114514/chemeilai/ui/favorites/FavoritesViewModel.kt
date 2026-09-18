@@ -8,6 +8,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.mimai114514.chemeilai.AppContainer
 import io.github.mimai114514.chemeilai.data.model.Favorite
 import io.github.mimai114514.chemeilai.data.model.FavoriteType
+import io.github.mimai114514.chemeilai.data.model.NearestStation
+import io.github.mimai114514.chemeilai.data.model.StationLineGroup
 import io.github.mimai114514.chemeilai.data.repository.CheLaileRepository
 import io.github.mimai114514.chemeilai.location.LocationProvider
 import kotlinx.coroutines.async
@@ -22,22 +24,32 @@ import kotlinx.coroutines.launch
 
 data class FavoriteLineStatus(
     val favorite: Favorite,
+    val direction: Int? = null,
+    val directionLabel: String? = null,
     val stationName: String? = null,
     val distanceMeters: Int? = null,
     val etaText: String? = null,
     val ready: Boolean = false,
     val stationId: String? = null,
     val lineNo: String? = null,
-    val direction: Int? = null,
 )
+
+data class FavoriteStationStatus(
+    val favorite: Favorite,
+    val distanceMeters: Int? = null,
+    val lines: List<StationLineGroup> = emptyList(),
+) {
+    val id: String get() = favorite.id
+}
 
 data class FavoritesUiState(
     val loading: Boolean = true,
     val refreshing: Boolean = false,
-    val stationFavorites: List<Favorite> = emptyList(),
-    val lineFavorites: List<FavoriteLineStatus> = emptyList(),
+    val reversed: Boolean = false,
+    val stations: List<FavoriteStationStatus> = emptyList(),
+    val lines: List<FavoriteLineStatus> = emptyList(),
 ) {
-    val isEmpty: Boolean get() = stationFavorites.isEmpty() && lineFavorites.isEmpty()
+    val isEmpty: Boolean get() = stations.isEmpty() && lines.isEmpty()
 }
 
 class FavoritesViewModel(
@@ -48,21 +60,26 @@ class FavoritesViewModel(
     private val _state = MutableStateFlow(FavoritesUiState())
     val state: StateFlow<FavoritesUiState> = _state.asStateFlow()
 
+    private var favorites: List<Favorite> = emptyList()
+
     init {
         viewModelScope.launch {
-            repository.observeFavorites().collectLatest { favorites ->
-                val stations = favorites.filter { it.type == FavoriteType.STATION }
-                val lines = favorites.filter { it.type == FavoriteType.LINE }
-                _state.update { it.copy(stationFavorites = stations) }
-                resolveLines(lines)
+            repository.observeFavorites().collectLatest { list ->
+                favorites = list
+                resolveAll(showLoading = _state.value.stations.isEmpty() && _state.value.lines.isEmpty())
             }
         }
+    }
+
+    fun toggleDirection() {
+        _state.update { it.copy(reversed = !it.reversed) }
+        viewModelScope.launch { resolveAll() }
     }
 
     fun refresh() {
         viewModelScope.launch {
             _state.update { it.copy(refreshing = true) }
-            resolveLines(_state.value.lineFavorites.map { it.favorite })
+            resolveAll()
         }
     }
 
@@ -72,29 +89,73 @@ class FavoritesViewModel(
         }
     }
 
-    private suspend fun resolveLines(favorites: List<Favorite>) {
+    private suspend fun resolveAll(showLoading: Boolean = false) {
+        if (showLoading) _state.update { it.copy(loading = true) }
         val location = locationProvider.lastKnown()
-        val statuses = coroutineScope {
-            favorites.map { favorite -> async { resolveLine(favorite, location) } }.awaitAll()
+        val stationFavorites = favorites.filter { it.type == FavoriteType.STATION }
+        val lineFavorites = favorites.filter { it.type == FavoriteType.LINE }
+        val reversed = _state.value.reversed
+
+        val stations = coroutineScope {
+            stationFavorites.map { favorite -> async { resolveStation(favorite, location) } }.awaitAll()
         }
-        _state.update { it.copy(loading = false, refreshing = false, lineFavorites = statuses) }
+        val lines = coroutineScope {
+            lineFavorites.map { favorite -> async { resolveLine(favorite, location, reversed) } }.awaitAll()
+        }
+        _state.update {
+            it.copy(loading = false, refreshing = false, stations = stations, lines = lines)
+        }
     }
 
-    private suspend fun resolveLine(favorite: Favorite, location: Location?): FavoriteLineStatus {
+    private suspend fun resolveStation(favorite: Favorite, location: Location?): FavoriteStationStatus {
+        val stationId = favorite.stationId ?: return FavoriteStationStatus(favorite)
+        val detail = runCatching {
+            repository.stationDetail(stationId, location?.latitude, location?.longitude)
+        }.getOrNull() ?: return FavoriteStationStatus(favorite)
+        val distance = location?.let {
+            runCatching {
+                repository.stationDistanceMeters(stationId, it.latitude, it.longitude)
+            }.getOrNull()
+        }
+        return FavoriteStationStatus(
+            favorite = favorite,
+            distanceMeters = distance,
+            lines = detail.lines,
+        )
+    }
+
+    private suspend fun resolveLine(
+        favorite: Favorite,
+        location: Location?,
+        reversed: Boolean,
+    ): FavoriteLineStatus {
         val name = favorite.lineName.orEmpty()
         if (name.isBlank() || location == null) return FavoriteLineStatus(favorite)
+        val nearestStations = runCatching {
+            repository.lineNearestStations(name, location.latitude, location.longitude)
+        }.getOrNull().orEmpty()
+        if (nearestStations.isEmpty()) return FavoriteLineStatus(favorite)
+
+        val auto = nearestStations.minByOrNull { it.distanceMeters } ?: return FavoriteLineStatus(favorite)
+        val selected: NearestStation = if (!reversed) {
+            auto
+        } else {
+            nearestStations.firstOrNull { it.direction != auto.direction } ?: auto
+        }
+
         val arrival = runCatching {
-            repository.lineArrivalAtNearestStation(name, location.latitude, location.longitude)
-        }.getOrNull() ?: return FavoriteLineStatus(favorite)
+            repository.arrivalAt(selected, name, location.latitude, location.longitude)
+        }.getOrNull()
         return FavoriteLineStatus(
             favorite = favorite,
-            stationName = arrival.stationName,
-            distanceMeters = arrival.distanceMeters,
-            etaText = arrival.etaMinutes?.let { "$it 分钟" },
-            ready = true,
-            stationId = arrival.stationId,
-            lineNo = arrival.lineNo,
-            direction = arrival.direction,
+            direction = selected.direction,
+            directionLabel = selected.directionLabel,
+            stationName = arrival?.stationName ?: selected.stationName,
+            distanceMeters = selected.distanceMeters,
+            etaText = arrival?.etaMinutes?.let { "$it 分钟" },
+            ready = arrival != null,
+            stationId = selected.stationId,
+            lineNo = arrival?.lineNo ?: selected.lineNo,
         )
     }
 

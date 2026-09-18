@@ -149,6 +149,20 @@ data class CityLine(
     val price: String?,
 )
 
+/** 某条线路在某个方向上离用户最近的站台。 */
+data class NearestStation(
+    val direction: Int,
+    val lineId: String,
+    val lineNo: String,
+    val startName: String?,
+    val endName: String?,
+    val stationId: String,
+    val stationName: String,
+    val distanceMeters: Int,
+) {
+    val directionLabel: String? get() = listOfNotNull(startName, endName).joinToString(" → ").ifBlank { null }
+}
+
 /** 某条线路离用户最近站台的到达情况，用于收藏页展示。 */
 data class LineArrival(
     val stationId: String,

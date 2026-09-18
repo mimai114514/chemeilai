@@ -19,6 +19,7 @@ import io.github.mimai114514.chemeilai.data.model.LineDirection
 import io.github.mimai114514.chemeilai.data.model.LineLocator
 import io.github.mimai114514.chemeilai.data.model.Nearby
 import io.github.mimai114514.chemeilai.data.model.NearbyStop
+import io.github.mimai114514.chemeilai.data.model.NearestStation
 import io.github.mimai114514.chemeilai.data.model.Poi
 import io.github.mimai114514.chemeilai.data.model.Realtime
 import io.github.mimai114514.chemeilai.data.model.RouteStation
@@ -173,56 +174,66 @@ class CheLaileRepository(
         return stations
     }
 
-    /** 找到该线路离 (lat,lng) 最近的站台，并返回该站该方向的到达信息。 */
-    suspend fun lineArrivalAtNearestStation(
-        lineName: String,
-        lat: Double,
-        lng: Double,
-    ): LineArrival? {
+    /** 该线路每个方向上离 (lat,lng) 最近的站台。 */
+    suspend fun lineNearestStations(lineName: String, lat: Double, lng: Double): List<NearestStation> {
         val directions = lineDirections(lineName)
-        if (directions.isEmpty()) return null
-
-        var bestDirection: CityLine? = null
-        var bestStation: RouteStation? = null
-        var bestDistance = Double.MAX_VALUE
-        for (direction in directions) {
+        return directions.mapNotNull { direction ->
             val stations = runCatching { lineRouteStations(direction.lineId, lat, lng) }.getOrNull().orEmpty()
-            for (station in stations) {
-                val stationId = station.sId ?: continue
-                val stationLat = station.lat ?: continue
-                val stationLng = station.lng ?: continue
-                val distance = metersBetween(lat, lng, stationLat, stationLng)
-                if (stationId.isNotBlank() && distance < bestDistance) {
-                    bestDistance = distance
-                    bestDirection = direction
-                    bestStation = station
-                }
+            val scored = stations.mapNotNull { station ->
+                val stationId = station.sId?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val stationLat = station.lat ?: return@mapNotNull null
+                val stationLng = station.lng ?: return@mapNotNull null
+                Triple(station, stationId, metersBetween(lat, lng, stationLat, stationLng))
             }
+            val nearest = scored.minByOrNull { it.third } ?: return@mapNotNull null
+            NearestStation(
+                direction = direction.direction,
+                lineId = direction.lineId,
+                lineNo = direction.lineNo,
+                startName = direction.startName,
+                endName = direction.endName,
+                stationId = nearest.second,
+                stationName = nearest.first.name,
+                distanceMeters = nearest.third.roundToInt(),
+            )
         }
-        val direction = bestDirection ?: return null
-        val station = bestStation ?: return null
-        val stationId = station.sId ?: return null
+    }
 
-        // stationDetail 里的 lineNo 才是用于定位的原始编码，先拿它再查实时
-        val detail = runCatching { stationDetail(stationId, lat, lng) }.getOrNull()
+    /** 在指定站台查询该线路的到达信息（lineNo 会用 stationDetail 里的原始编码）。 */
+    suspend fun arrivalAt(
+        nearest: NearestStation,
+        lineName: String,
+        lat: Double? = null,
+        lng: Double? = null,
+    ): LineArrival? {
+        val detail = runCatching { stationDetail(nearest.stationId, lat, lng) }.getOrNull()
         val rawLineNo = detail?.lines
             ?.firstOrNull { it.displayName == lineName }
             ?.directions
-            ?.firstOrNull { it.direction == direction.direction }
+            ?.firstOrNull { it.direction == nearest.direction }
             ?.lineNo
-            ?: direction.lineNo
-
-        val realtime = runCatching { realtime(stationId, rawLineNo, direction.direction, lat, lng) }.getOrNull()
+            ?: nearest.lineNo
+        val realtime = runCatching {
+            realtime(nearest.stationId, rawLineNo, nearest.direction, lat, lng)
+        }.getOrNull() ?: return null
         return LineArrival(
-            stationId = stationId,
-            stationName = realtime?.stationName ?: station.name,
+            stationId = nearest.stationId,
+            stationName = realtime.stationName.ifBlank { nearest.stationName },
             lineNo = rawLineNo,
-            direction = direction.direction,
-            distanceMeters = bestDistance.roundToInt(),
-            etaMinutes = realtime?.buses?.firstOrNull()?.etaMinutes,
-            tip = realtime?.tip,
-            buses = realtime?.buses.orEmpty(),
+            direction = nearest.direction,
+            distanceMeters = nearest.distanceMeters,
+            etaMinutes = realtime.buses.firstOrNull()?.etaMinutes,
+            tip = realtime.tip,
+            buses = realtime.buses,
         )
+    }
+
+    /** 站点与用户的距离（仅当本地缓存过该站点坐标时可用）。 */
+    suspend fun stationDistanceMeters(stationId: String, lat: Double, lng: Double): Int? {
+        val station = dao.station(stationId) ?: return null
+        val stationLat = station.lat ?: return null
+        val stationLng = station.lng ?: return null
+        return metersBetween(lat, lng, stationLat, stationLng).roundToInt()
     }
 
     suspend fun resolveCity(lat: Double, lng: Double): City {
