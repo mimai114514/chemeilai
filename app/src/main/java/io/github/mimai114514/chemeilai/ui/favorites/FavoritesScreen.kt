@@ -49,7 +49,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mimai114514.chemeilai.data.model.Favorite
 import io.github.mimai114514.chemeilai.data.model.LineDirection
 import io.github.mimai114514.chemeilai.ui.common.LineBadge
-import io.github.mimai114514.chemeilai.ui.common.StationLineRow
+import io.github.mimai114514.chemeilai.ui.common.StationLineList
 import io.github.mimai114514.chemeilai.ui.common.rememberAppContainer
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -234,15 +234,12 @@ private fun StationCard(
             }
 
             if (status.lines.isNotEmpty()) {
-                Column(modifier = Modifier.padding(bottom = 8.dp)) {
-                    status.lines.forEach { group ->
-                        StationLineRow(
-                            group = group,
-                            reversed = reversed,
-                            onClick = { direction -> onLineClick(stationId, direction) },
-                        )
-                    }
-                }
+                StationLineList(
+                    stateKey = stationId,
+                    lines = status.lines,
+                    reversed = reversed,
+                    onLineClick = { direction -> onLineClick(stationId, direction) },
+                )
             }
         }
     }

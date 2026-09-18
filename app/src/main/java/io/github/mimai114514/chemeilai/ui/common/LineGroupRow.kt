@@ -14,7 +14,12 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -117,6 +122,32 @@ private fun VehicleInfo(etaText: String?, status: String?) {
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+fun StationLineList(
+    stateKey: Any,
+    lines: List<StationLineGroup>,
+    reversed: Boolean,
+    onLineClick: (LineDirection) -> Unit,
+    collapsedCount: Int = 3,
+) {
+    var expanded by rememberSaveable(stateKey) { mutableStateOf(false) }
+    val visible = if (expanded) lines else lines.take(collapsedCount)
+    Column(modifier = Modifier.padding(bottom = 10.dp)) {
+        visible.forEach { group ->
+            StationLineRow(
+                group = group,
+                reversed = reversed,
+                onClick = onLineClick,
+            )
+        }
+        if (lines.size > collapsedCount) {
+            TextButton(onClick = { expanded = !expanded }) {
+                Text(if (expanded) "收起" else "展开全部 ${lines.size} 条")
+            }
         }
     }
 }

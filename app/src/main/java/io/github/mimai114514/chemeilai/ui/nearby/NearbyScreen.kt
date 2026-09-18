@@ -51,7 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mimai114514.chemeilai.data.model.LineDirection
 import io.github.mimai114514.chemeilai.data.model.NearbyStop
-import io.github.mimai114514.chemeilai.ui.common.StationLineRow
+import io.github.mimai114514.chemeilai.ui.common.StationLineList
 import io.github.mimai114514.chemeilai.ui.common.formatDistance
 import io.github.mimai114514.chemeilai.ui.common.rememberAppContainer
 
@@ -279,15 +279,12 @@ private fun StopCard(
             }
 
             if (stop.lines.isNotEmpty()) {
-                Column(modifier = Modifier.padding(bottom = 10.dp)) {
-                    stop.lines.forEach { group ->
-                        StationLineRow(
-                            group = group,
-                            reversed = reversed,
-                            onClick = { direction -> onLineClick(stop, direction) },
-                        )
-                    }
-                }
+                StationLineList(
+                    stateKey = stop.sId,
+                    lines = stop.lines,
+                    reversed = reversed,
+                    onLineClick = { direction -> onLineClick(stop, direction) },
+                )
             }
         }
     }
