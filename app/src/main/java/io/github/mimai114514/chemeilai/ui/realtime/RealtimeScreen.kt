@@ -137,7 +137,7 @@ private fun RealtimeContent(realtime: Realtime) {
         }
 
         item {
-            SectionTitle("实时车辆")
+            RealtimeSectionTitle("实时车辆")
         }
 
         if (realtime.buses.isEmpty()) {
@@ -150,16 +150,16 @@ private fun RealtimeContent(realtime: Realtime) {
             }
         } else {
             items(realtime.buses) { bus ->
-                BusCard(bus = bus, targetOrder = realtime.targetOrder)
+                RealtimeBusCard(bus = bus, targetOrder = realtime.targetOrder, targetLabel = "本站")
             }
         }
 
         if (realtime.stations.isNotEmpty()) {
             item {
-                SectionTitle("站序 · 车辆位置")
+                RealtimeSectionTitle("站序 · 车辆位置")
             }
             items(realtime.stations, key = { it.order }) { station ->
-                StationRow(
+                RealtimeStationRow(
                     name = station.name,
                     order = station.order,
                     isTarget = station.order == realtime.targetOrder,
@@ -196,140 +196,6 @@ private fun LineHeader(realtime: Realtime) {
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 4.dp),
-    )
-}
-
-@Composable
-private fun BusCard(bus: BusEta, targetOrder: Int) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = Icons.Filled.DirectionsBus,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = busLabel(bus, targetOrder),
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                )
-                val details = buildList {
-                    bus.distanceMeters?.let { add("距本站 ${it} 米") }
-                    bus.timeStr?.takeIf { it.isNotBlank() }?.let { add("预计 $it") }
-                }
-                if (details.isNotEmpty()) {
-                    Text(
-                        text = details.joinToString(" · "),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            bus.etaMinutes?.let { minutes ->
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = minutes.toString(),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        text = "分钟",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 2.dp, bottom = 3.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
-private fun busLabel(bus: BusEta, targetOrder: Int): String {
-    val order = bus.order ?: return "车辆"
-    val diff = order - targetOrder
-    return when {
-        diff == 0 -> "已到本站"
-        diff == 1 -> "即将到站"
-        diff > 1 -> "还有 $diff 站"
-        else -> "已过本站"
-    }
-}
-
-@Composable
-private fun StationRow(
-    name: String,
-    order: Int,
-    isTarget: Boolean,
-    hasBus: Boolean,
-) {
-    val background = when {
-        isTarget -> MaterialTheme.colorScheme.primaryContainer
-        hasBus -> MaterialTheme.colorScheme.secondaryContainer
-        else -> MaterialTheme.colorScheme.surface
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(background, MaterialTheme.shapes.medium)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = order.toString(),
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        Text(
-            text = name,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = if (isTarget) FontWeight.Bold else FontWeight.Normal,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        when {
-            hasBus -> Icon(
-                imageVector = Icons.Filled.DirectionsBus,
-                contentDescription = "有车",
-                tint = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(20.dp),
-            )
-
-            isTarget -> Icon(
-                imageVector = Icons.Filled.Place,
-                contentDescription = "本站",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp),
-            )
         }
     }
 }

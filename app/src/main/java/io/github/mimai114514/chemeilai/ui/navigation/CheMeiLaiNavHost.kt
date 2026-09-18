@@ -24,8 +24,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import io.github.mimai114514.chemeilai.ui.city.CityPickerScreen
 import io.github.mimai114514.chemeilai.ui.favorites.FavoritesScreen
-import io.github.mimai114514.chemeilai.ui.line.LineDetailScreen
 import io.github.mimai114514.chemeilai.ui.nearby.NearbyScreen
+import io.github.mimai114514.chemeilai.ui.realtime.LineRealtimeScreen
 import io.github.mimai114514.chemeilai.ui.realtime.RealtimeScreen
 import io.github.mimai114514.chemeilai.ui.search.SearchScreen
 import io.github.mimai114514.chemeilai.ui.settings.SettingsScreen
@@ -37,21 +37,20 @@ private object Routes {
     const val FAVORITES = "favorites"
     const val SETTINGS = "settings"
     const val CITY = "city"
-    const val STATION = "station/{sId}?name={name}"
+    const val STATION = "station/{sId}?name={name}&direction={direction}"
     const val REALTIME = "realtime/{sId}/{lineNo}/{direction}?name={name}"
-    const val LINE = "line/{lineName}?cityId={cityId}&direction={direction}&lineId={lineId}"
+    const val LINE = "line/{lineName}?cityId={cityId}&direction={direction}"
 
-    fun station(sId: String, name: String): String =
-        "station/${Uri.encode(sId)}?name=${Uri.encode(name)}"
+    fun station(sId: String, name: String, direction: Int? = null): String =
+        "station/${Uri.encode(sId)}?name=${Uri.encode(name)}&direction=${direction ?: -1}"
 
     fun realtime(sId: String, lineNo: String, direction: Int, name: String): String =
         "realtime/${Uri.encode(sId)}/${Uri.encode(lineNo)}/$direction?name=${Uri.encode(name)}"
 
-    fun line(lineName: String, cityId: String?, direction: Int?, lineId: String?): String = buildString {
+    fun line(lineName: String, cityId: String?, direction: Int?): String = buildString {
         append("line/").append(Uri.encode(lineName))
         append("?cityId=").append(Uri.encode(cityId.orEmpty()))
         append("&direction=").append(direction ?: -1)
-        append("&lineId=").append(Uri.encode(lineId.orEmpty()))
     }
 }
 
@@ -127,7 +126,6 @@ fun CheMeiLaiNavHost(startDestination: String = Routes.NEARBY) {
                                 lineName = line.displayName,
                                 cityId = cityId,
                                 direction = line.direction,
-                                lineId = line.lineId,
                             ),
                         )
                     },
@@ -165,7 +163,6 @@ fun CheMeiLaiNavHost(startDestination: String = Routes.NEARBY) {
                                     lineName = favorite.lineName.orEmpty(),
                                     cityId = favorite.cityId,
                                     direction = favorite.direction,
-                                    lineId = favorite.lineId,
                                 ),
                             )
                         }
@@ -192,11 +189,16 @@ fun CheMeiLaiNavHost(startDestination: String = Routes.NEARBY) {
                         type = NavType.StringType
                         defaultValue = ""
                     },
+                    navArgument("direction") {
+                        type = NavType.IntType
+                        defaultValue = -1
+                    },
                 ),
             ) { entry ->
                 StationDetailScreen(
                     stationId = entry.arguments?.getString("sId").orEmpty(),
                     stationName = entry.arguments?.getString("name").orEmpty(),
+                    initialDirection = entry.arguments?.getInt("direction")?.takeIf { it >= 0 },
                     onBack = { navController.popBackStack() },
                     onLineClick = { resolvedId, line ->
                         navController.navigate(
@@ -239,23 +241,15 @@ fun CheMeiLaiNavHost(startDestination: String = Routes.NEARBY) {
                         type = NavType.IntType
                         defaultValue = -1
                     },
-                    navArgument("lineId") {
-                        type = NavType.StringType
-                        defaultValue = ""
-                    },
                 ),
             ) { entry ->
-                LineDetailScreen(
+                LineRealtimeScreen(
                     cityId = entry.arguments?.getString("cityId")?.takeIf { it.isNotBlank() },
                     lineName = entry.arguments?.getString("lineName").orEmpty(),
                     direction = entry.arguments?.getInt("direction")?.takeIf { it >= 0 },
-                    lineId = entry.arguments?.getString("lineId")?.takeIf { it.isNotBlank() },
                     onBack = { navController.popBackStack() },
-                    onStationClick = { station ->
-                        val sId = station.sId
-                        if (sId != null) {
-                            navController.navigate(Routes.station(sId, station.name))
-                        }
+                    onStationClick = { direction, stationId, stationName ->
+                        navController.navigate(Routes.station(stationId, stationName, direction))
                     },
                 )
             }

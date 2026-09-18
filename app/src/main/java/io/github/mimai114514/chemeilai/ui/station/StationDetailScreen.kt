@@ -41,12 +41,19 @@ import io.github.mimai114514.chemeilai.ui.common.rememberAppContainer
 fun StationDetailScreen(
     stationId: String,
     stationName: String,
+    initialDirection: Int? = null,
     onBack: () -> Unit,
     onLineClick: (String, LineDirection) -> Unit,
 ) {
     val container = rememberAppContainer()
-    val viewModel: StationDetailViewModel =
-        viewModel(factory = StationDetailViewModel.factory(container, stationId, stationName))
+    val viewModel: StationDetailViewModel = viewModel(
+        factory = StationDetailViewModel.factory(
+            container = container,
+            stationId = stationId,
+            stationName = stationName,
+            initialDirection = initialDirection,
+        ),
+    )
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     Scaffold(

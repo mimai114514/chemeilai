@@ -34,9 +34,12 @@ class StationDetailViewModel(
     private val locationProvider: LocationProvider,
     private val stationId: String,
     initialName: String,
+    initialDirection: Int? = null,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(StationDetailUiState(name = initialName))
+    private val _state = MutableStateFlow(
+        StationDetailUiState(name = initialName, reversed = initialDirection == 1),
+    )
     val state: StateFlow<StationDetailUiState> = _state.asStateFlow()
 
     init {
@@ -126,13 +129,19 @@ class StationDetailViewModel(
     }
 
     companion object {
-        fun factory(container: AppContainer, stationId: String, stationName: String) = viewModelFactory {
+        fun factory(
+            container: AppContainer,
+            stationId: String,
+            stationName: String,
+            initialDirection: Int? = null,
+        ) = viewModelFactory {
             initializer {
                 StationDetailViewModel(
                     repository = container.repository,
                     locationProvider = container.locationProvider,
                     stationId = stationId,
                     initialName = stationName,
+                    initialDirection = initialDirection,
                 )
             }
         }

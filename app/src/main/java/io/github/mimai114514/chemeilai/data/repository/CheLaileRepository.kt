@@ -245,6 +245,31 @@ class CheLaileRepository(
         )
     }
 
+    /** 无站点上下文的线路实时：用该方向的首站充当接口所需的目标站。 */
+    suspend fun lineRealtime(
+        lineName: String,
+        direction: Int,
+        lat: Double? = null,
+        lng: Double? = null,
+    ): Realtime? {
+        val directions = lineDirections(lineName)
+        val target = directions.firstOrNull { it.direction == direction }
+            ?: directions.firstOrNull()
+            ?: return null
+        val stations = runCatching { lineRouteStations(target.lineId, lat, lng) }.getOrNull().orEmpty()
+        val stationId = stations.firstOrNull { !it.sId.isNullOrBlank() }?.sId ?: return null
+        val detail = runCatching { stationDetail(stationId, lat, lng) }.getOrNull()
+        val rawLineNo = detail?.lines
+            ?.firstOrNull { it.displayName == lineName }
+            ?.directions
+            ?.firstOrNull { it.direction == target.direction }
+            ?.lineNo
+            ?: target.lineNo
+        return runCatching {
+            realtime(stationId, rawLineNo, target.direction, lat, lng)
+        }.getOrNull()
+    }
+
     /** 站点与用户的距离（仅当本地缓存过该站点坐标时可用）。 */
     suspend fun stationDistanceMeters(stationId: String, lat: Double, lng: Double): Int? {
         val station = dao.station(stationId) ?: return null
