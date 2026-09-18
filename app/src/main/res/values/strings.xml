@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">车没来</string>
+
+    <string name="nearby_title">附近站点</string>
+    <string name="nearby_refresh">刷新</string>
+    <string name="nearby_locating">正在定位…</string>
+    <string name="nearby_empty">附近没有找到站点</string>
+    <string name="nearby_error">加载失败</string>
+    <string name="nearby_retry">重试</string>
+    <string name="nearby_permission_title">需要定位权限</string>
+    <string name="nearby_permission_message">“车没来”需要位置权限来查找附近的公交站点。</string>
+    <string name="nearby_permission_grant">授予权限</string>
+    <string name="nearby_permission_denied">定位权限被拒绝，请在系统设置中开启。</string>
+    <string name="nearby_open_settings">打开设置</string>
+
+    <string name="station_detail_title">站点详情</string>
+    <string name="station_no_lines">该站点暂无线路信息</string>
+    <string name="station_line_direction">%1$s → %2$s</string>
+    <string name="station_line_target">本站第 %1$d 站</string>
+
+    <string name="realtime_title">实时到站</string>
+    <string name="realtime_no_bus">暂无车辆信息</string>
+    <string name="realtime_arriving">即将到站</string>
+    <string name="realtime_minutes">%1$d 分钟</string>
+    <string name="realtime_distance">距本站 %1$d 米</string>
+    <string name="realtime_bus_order">第 %1$d 辆</string>
+
+    <string name="cd_back">返回</string>
+    <string name="cd_refresh">刷新</string>
+</resources>
