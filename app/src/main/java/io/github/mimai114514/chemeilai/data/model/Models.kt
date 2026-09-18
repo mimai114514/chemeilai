@@ -64,6 +64,11 @@ data class StationLineGroup(
         directions.minByOrNull { it.etaMinutes ?: Int.MAX_VALUE } ?: directions.firstOrNull()
 }
 
+/** 按收藏的线路名重算收藏标记，并把已收藏线路排到前面。 */
+fun List<StationLineGroup>.applyFavorites(favoriteLineNames: Set<String>): List<StationLineGroup> =
+    map { group -> group.copy(isFavorite = group.displayName in favoriteLineNames) }
+        .sortedWith(compareByDescending { it.isFavorite })
+
 data class StationDetail(
     val sId: String,
     val name: String,

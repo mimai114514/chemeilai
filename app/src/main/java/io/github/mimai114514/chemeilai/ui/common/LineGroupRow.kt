@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -54,9 +53,8 @@ fun StationLineRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 76.dp)
             .clickable { onClick(direction) }
-            .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 14.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 7.dp, bottom = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -136,7 +134,7 @@ fun StationLineList(
 ) {
     var expanded by rememberSaveable(stateKey) { mutableStateOf(false) }
     val visible = if (expanded) lines else lines.take(collapsedCount)
-    Column(modifier = Modifier.padding(bottom = 10.dp)) {
+    Column(modifier = Modifier.padding(bottom = 5.dp)) {
         visible.forEach { group ->
             StationLineRow(
                 group = group,

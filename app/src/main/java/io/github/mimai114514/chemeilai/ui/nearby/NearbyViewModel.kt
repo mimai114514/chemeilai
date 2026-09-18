@@ -6,6 +6,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.mimai114514.chemeilai.AppContainer
 import io.github.mimai114514.chemeilai.data.model.NearbyStop
+import io.github.mimai114514.chemeilai.data.model.applyFavorites
 import io.github.mimai114514.chemeilai.data.repository.CheLaileRepository
 import io.github.mimai114514.chemeilai.location.LocationProvider
 import io.github.mimai114514.chemeilai.location.LocationResult
@@ -34,6 +35,25 @@ class NearbyViewModel(
 
     private val _state = MutableStateFlow(NearbyUiState())
     val state: StateFlow<NearbyUiState> = _state.asStateFlow()
+
+    init {
+        // 收藏变化时立即同步卡片上的收藏标记与排序，无需重新请求接口
+        viewModelScope.launch {
+            repository.observeFavoriteLineNames().collect { names ->
+                _state.update { current ->
+                    if (current.stops.isEmpty()) {
+                        current
+                    } else {
+                        current.copy(
+                            stops = current.stops.map { stop ->
+                                stop.copy(lines = stop.lines.applyFavorites(names))
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     fun refresh() {
         viewModelScope.launch {

@@ -8,6 +8,7 @@ import io.github.mimai114514.chemeilai.AppContainer
 import io.github.mimai114514.chemeilai.data.model.Favorite
 import io.github.mimai114514.chemeilai.data.model.FavoriteType
 import io.github.mimai114514.chemeilai.data.model.StationLineGroup
+import io.github.mimai114514.chemeilai.data.model.applyFavorites
 import io.github.mimai114514.chemeilai.data.repository.CheLaileRepository
 import io.github.mimai114514.chemeilai.location.LocationProvider
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +41,18 @@ class StationDetailViewModel(
 
     init {
         load()
+        // 收藏变化时立即同步线路行的收藏标记与排序
+        viewModelScope.launch {
+            repository.observeFavoriteLineNames().collect { names ->
+                _state.update { current ->
+                    if (current.lines.isEmpty()) {
+                        current
+                    } else {
+                        current.copy(lines = current.lines.applyFavorites(names))
+                    }
+                }
+            }
+        }
     }
 
     fun load() {

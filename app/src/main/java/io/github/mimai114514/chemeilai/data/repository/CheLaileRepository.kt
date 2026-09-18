@@ -28,6 +28,7 @@ import io.github.mimai114514.chemeilai.data.model.SearchResult
 import io.github.mimai114514.chemeilai.data.model.Station
 import io.github.mimai114514.chemeilai.data.model.StationDetail
 import io.github.mimai114514.chemeilai.data.model.StationLineGroup
+import io.github.mimai114514.chemeilai.data.model.applyFavorites
 import io.github.mimai114514.chemeilai.data.remote.CheLaileApi
 import io.github.mimai114514.chemeilai.data.remote.CheLaileApiFactory
 import io.github.mimai114514.chemeilai.data.remote.CityLineListDto
@@ -46,6 +47,9 @@ import io.github.mimai114514.chemeilai.data.remote.StationDetailDto
 import io.github.mimai114514.chemeilai.data.remote.StationLineEntryDto
 import io.github.mimai114514.chemeilai.data.remote.StnStateDto
 import io.github.mimai114514.chemeilai.data.remote.requireData
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.decodeFromString
@@ -100,6 +104,15 @@ class CheLaileRepository(
 
     fun observeFavorites(): Flow<List<Favorite>> =
         dao.observeFavorites().map { list -> list.mapNotNull { it.toFavoriteOrNull() } }
+
+    /** 仅关注收藏线路的线路名，供主页/站点页实时同步收藏状态。 */
+    fun observeFavoriteLineNames(): Flow<Set<String>> =
+        dao.observeFavorites()
+            .map { list ->
+                list.filter { it.type == FavoriteType.LINE.name }
+                    .mapNotNull { it.lineName }
+                    .toSet()
+            }
 
     suspend fun favorites(): List<Favorite> = dao.favorites().mapNotNull { it.toFavoriteOrNull() }
 
@@ -291,8 +304,21 @@ class CheLaileRepository(
                 lines = stop.lines.mapNotNull { it.toLineDirection(stop.sn) }.toGroups(favorites),
             )
         }
-        cacheStations(city.cityId, stops)
-        return Nearby(city, stops)
+        // nearLines 只返回部分线路，用站点详情补全每个站的完整线路表
+        val enriched = coroutineScope {
+            stops.map { stop -> async { enrichStop(stop, city.cityId) } }.awaitAll()
+        }
+        cacheStations(city.cityId, enriched)
+        return Nearby(city, enriched)
+    }
+
+    private suspend fun enrichStop(stop: NearbyStop, cityId: String): NearbyStop {
+        if (stop.sId.isBlank()) return stop
+        val detail = runCatching {
+            stationDetail(stop.sId, stop.lat, stop.lng, cityId)
+        }.getOrNull() ?: return stop
+        if (detail.lines.isEmpty()) return stop
+        return stop.copy(lines = detail.lines)
     }
 
     suspend fun stationDetail(
@@ -481,10 +507,9 @@ class CheLaileRepository(
                     key = name,
                     displayName = name,
                     directions = directions.sortedBy { it.direction },
-                    isFavorite = name in favoriteLines,
                 )
             }
-            .sortedWith(compareByDescending { it.isFavorite })
+            .applyFavorites(favoriteLines)
 
     private fun FavoriteEntity.toFavoriteOrNull(): Favorite? {
         val parsed = runCatching { FavoriteType.valueOf(type) }.getOrNull() ?: return null
