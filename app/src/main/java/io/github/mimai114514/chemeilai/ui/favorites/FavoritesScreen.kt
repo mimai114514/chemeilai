@@ -266,7 +266,7 @@ private fun LineCard(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            LineBadge(favorite.lineName.orEmpty())
+            LineBadge(text = favorite.lineName.orEmpty(), isFavorite = true)
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
