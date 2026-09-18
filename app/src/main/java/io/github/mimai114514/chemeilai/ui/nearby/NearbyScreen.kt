@@ -17,9 +17,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LocationCity
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -32,8 +34,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +58,8 @@ import io.github.mimai114514.chemeilai.ui.common.rememberAppContainer
 fun NearbyScreen(
     onStationClick: (NearbyStop) -> Unit,
     onLineClick: (NearbyStop, NearbyLine) -> Unit,
+    onPickCity: () -> Unit,
+    onSearchClick: () -> Unit,
 ) {
     val container = rememberAppContainer()
     val viewModel: NearbyViewModel = viewModel(factory = NearbyViewModel.factory(container))
@@ -63,6 +69,10 @@ fun NearbyScreen(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { viewModel.refresh() }
 
+    LaunchedEffect(Unit) {
+        viewModel.refresh()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -71,7 +81,7 @@ fun NearbyScreen(
                         Text("附近站点", fontWeight = FontWeight.SemiBold)
                         state.cityName?.let { city ->
                             Text(
-                                text = city,
+                                text = if (state.manualCity) "$city（手动）" else city,
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -79,6 +89,9 @@ fun NearbyScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onPickCity) {
+                        Icon(Icons.Filled.LocationCity, contentDescription = "选择城市")
+                    }
                     IconButton(onClick = viewModel::refresh) {
                         Icon(Icons.Filled.Refresh, contentDescription = "刷新")
                     }
@@ -92,6 +105,12 @@ fun NearbyScreen(
                 .padding(padding),
         ) {
             when {
+                state.manualCity -> ManualCityPanel(
+                    cityName = state.cityName.orEmpty(),
+                    onSearch = onSearchClick,
+                    onUseAuto = viewModel::useAutoLocation,
+                )
+
                 state.permissionRequired -> PermissionRequest(
                     onGrant = {
                         permissionLauncher.launch(
@@ -101,16 +120,18 @@ fun NearbyScreen(
                             ),
                         )
                     },
+                    onPickCity = onPickCity,
                 )
 
                 state.loading -> LoadingState()
 
-                state.error != null -> ErrorState(
-                    message = state.error.orEmpty(),
+                state.servicesDisabled || state.error != null -> ErrorState(
+                    message = state.error ?: "定位不可用",
                     onRetry = viewModel::refresh,
+                    onPickCity = onPickCity,
                 )
 
-                state.stops.isEmpty() -> EmptyState()
+                state.stops.isEmpty() -> EmptyState(onPickCity = onPickCity)
 
                 else -> StopList(
                     stops = state.stops,
@@ -118,6 +139,49 @@ fun NearbyScreen(
                     onLineClick = onLineClick,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun ManualCityPanel(
+    cityName: String,
+    onSearch: () -> Unit,
+    onUseAuto: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.LocationCity,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            text = "当前城市：$cityName",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(top = 12.dp),
+        )
+        Text(
+            text = "手动选择城市时不依赖定位，可直接搜索线路和站点。「附近站点」需要定位。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        Button(onClick = onSearch, modifier = Modifier.padding(top = 20.dp)) {
+            Icon(Icons.Filled.Search, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("去搜索线路 / 站点")
+        }
+        TextButton(onClick = onUseAuto, modifier = Modifier.padding(top = 4.dp)) {
+            Icon(Icons.Filled.MyLocation, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("改用当前定位")
         }
     }
 }
@@ -275,7 +339,6 @@ private fun LoadingState() {
         verticalArrangement = Arrangement.Center,
     ) {
         CircularProgressIndicator()
-        Spacer(Modifier.width(0.dp))
         Text(
             text = "正在定位…",
             style = MaterialTheme.typography.bodyMedium,
@@ -286,7 +349,7 @@ private fun LoadingState() {
 }
 
 @Composable
-private fun ErrorState(message: String, onRetry: () -> Unit) {
+private fun ErrorState(message: String, onRetry: () -> Unit, onPickCity: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -307,22 +370,34 @@ private fun ErrorState(message: String, onRetry: () -> Unit) {
         Button(onClick = onRetry, modifier = Modifier.padding(top = 16.dp)) {
             Text("重试")
         }
+        TextButton(onClick = onPickCity) {
+            Text("手动选择城市")
+        }
     }
 }
 
 @Composable
-private fun EmptyState() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+private fun EmptyState(onPickCity: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
         Text(
             text = "附近没有找到站点",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        TextButton(onClick = onPickCity) {
+            Text("手动选择城市")
+        }
     }
 }
 
 @Composable
-private fun PermissionRequest(onGrant: () -> Unit) {
+private fun PermissionRequest(onGrant: () -> Unit, onPickCity: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -336,13 +411,16 @@ private fun PermissionRequest(onGrant: () -> Unit) {
             fontWeight = FontWeight.SemiBold,
         )
         Text(
-            text = "“车没来”需要位置权限来查找附近的公交站点。",
+            text = "“车没来”需要位置权限来查找附近的公交站点。也可以手动选择城市，改用搜索。",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp),
         )
         Button(onClick = onGrant, modifier = Modifier.padding(top = 20.dp)) {
             Text("授予权限")
+        }
+        TextButton(onClick = onPickCity) {
+            Text("手动选择城市")
         }
     }
 }

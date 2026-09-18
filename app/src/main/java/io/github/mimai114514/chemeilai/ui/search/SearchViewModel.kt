@@ -21,6 +21,8 @@ data class SearchUiState(
     val loading: Boolean = false,
     val result: SearchResult? = null,
     val error: String? = null,
+    val cityName: String? = null,
+    val cityResolved: Boolean = false,
 )
 
 class SearchViewModel(
@@ -32,6 +34,17 @@ class SearchViewModel(
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
 
     private var searchJob: Job? = null
+
+    init {
+        refreshCity()
+    }
+
+    fun refreshCity() {
+        viewModelScope.launch {
+            val city = repository.currentCity()
+            _state.update { it.copy(cityName = city?.cityName, cityResolved = true) }
+        }
+    }
 
     fun onQueryChange(query: String) {
         _state.update { it.copy(query = query, error = null) }

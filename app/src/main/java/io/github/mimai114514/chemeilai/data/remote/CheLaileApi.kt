@@ -11,6 +11,11 @@ interface CheLaileApi {
         @QueryMap params: Map<String, String>,
     ): CityListResponse
 
+    @GET("cdatasource/citylist")
+    suspend fun allCities(
+        @QueryMap params: Map<String, String>,
+    ): AllCitiesResponse
+
     @GET("api/bus/stop!nearPhysicalStns.action")
     suspend fun nearPhysicalStations(
         @QueryMap params: Map<String, String>,

@@ -10,6 +10,7 @@ import io.github.mimai114514.chemeilai.data.local.SessionStore
 import io.github.mimai114514.chemeilai.data.local.StationEntity
 import io.github.mimai114514.chemeilai.data.model.BusEta
 import io.github.mimai114514.chemeilai.data.model.City
+import io.github.mimai114514.chemeilai.data.model.CityOption
 import io.github.mimai114514.chemeilai.data.model.Favorite
 import io.github.mimai114514.chemeilai.data.model.FavoriteType
 import io.github.mimai114514.chemeilai.data.model.LineDetail
@@ -28,6 +29,7 @@ import io.github.mimai114514.chemeilai.data.model.StationLine
 import io.github.mimai114514.chemeilai.data.remote.CheLaileApi
 import io.github.mimai114514.chemeilai.data.remote.CheLaileApiFactory
 import io.github.mimai114514.chemeilai.data.remote.CityLineListDto
+import io.github.mimai114514.chemeilai.data.remote.CityOptionDto
 import io.github.mimai114514.chemeilai.data.remote.ClientSearchDto
 import io.github.mimai114514.chemeilai.data.remote.Envelope
 import io.github.mimai114514.chemeilai.data.remote.LineDetailDto
@@ -62,6 +64,33 @@ class CheLaileRepository(
 
     suspend fun lastCity(): City? = dao.latestCity()?.let { City(it.cityId, it.cityName) }
 
+    @Volatile
+    private var allCitiesCache: List<CityOption>? = null
+
+    suspend fun manualCity(): City? = session.manualCity()?.let { (id, name) ->
+        City(id, name.ifBlank { null })
+    }
+
+    suspend fun currentCity(): City? = manualCity() ?: lastCity()
+
+    suspend fun selectCity(city: City) = session.setManualCity(city.cityId, city.cityName.orEmpty())
+
+    suspend fun clearManualCity() = session.clearManualCity()
+
+    suspend fun allCities(): List<CityOption> {
+        allCitiesCache?.let { return it }
+        val params = linkedMapOf(
+            "type" to "all",
+            "s" to "android",
+            "v" to CheLaileApiFactory.CITYLIST_VERSION,
+            "src" to "webapp_default",
+            "userId" to "",
+        )
+        val cities = api.allCities(params).data?.allRealtimeCity.orEmpty().mapNotNull { it.toCityOption() }
+        if (cities.isNotEmpty()) allCitiesCache = cities
+        return cities
+    }
+
     fun observeFavorites(): Flow<List<Favorite>> =
         dao.observeFavorites().map { list -> list.map { it.toFavorite() } }
 
@@ -81,7 +110,7 @@ class CheLaileRepository(
         val dto: ClientSearchDto = plain(
             call = api::clientSearch,
             biz = mapOf("key" to trimmed, "count" to SEARCH_COUNT),
-            cityId = dao.latestCity()?.cityId,
+            cityId = currentCity()?.cityId,
             lat = lat,
             lng = lng,
         )
@@ -101,7 +130,7 @@ class CheLaileRepository(
         lat: Double? = null,
         lng: Double? = null,
     ): LineDetail {
-        val cityId = dao.latestCity()?.cityId
+        val cityId = currentCity()?.cityId
         val dto: LineRouteDto = plain(
             call = api::lineRoute,
             biz = mapOf("lineId" to lineId),
@@ -197,7 +226,7 @@ class CheLaileRepository(
         cityId: String? = null,
     ): StationDetail {
         val geo = resolveGeo(stationId, lat, lng)
-        val city = cityId ?: dao.latestCity()?.cityId
+        val city = cityId ?: currentCity()?.cityId
         val dto = encrypted<StationDetailDto>(
             call = api::encryptedStationDetail,
             biz = listOf("stationId" to stationId, "destSId" to "-1"),
@@ -261,7 +290,7 @@ class CheLaileRepository(
                 "lineNo" to locator.lineNo,
                 "targetOrder" to locator.targetOrder,
             ),
-            cityId = cityId ?: dao.latestCity()?.cityId,
+            cityId = cityId ?: currentCity()?.cityId,
             lat = geo.first,
             lng = geo.second,
         )
@@ -404,6 +433,17 @@ class CheLaileRepository(
         cityId = cityId,
         createdAt = System.currentTimeMillis(),
     )
+
+    private fun CityOptionDto.toCityOption(): CityOption? {
+        val id = cityId?.takeIf { it.isNotBlank() } ?: return null
+        val label = cityName?.takeIf { it.isNotBlank() } ?: return null
+        return CityOption(
+            cityId = id,
+            name = label,
+            pinyin = pinyin.orEmpty(),
+            hot = (hot ?: 0.0) > 0.0,
+        )
+    }
 
     private fun NearStationDto.toStation(): Station? {
         val id = sId ?: return null

@@ -182,3 +182,23 @@ data class LineRouteDto(
 data class CityLineListDto(
     val allLines: Map<String, List<LineDto>> = emptyMap(),
 )
+
+@Serializable
+data class AllCitiesResponse(
+    val status: String? = null,
+    val data: AllCitiesData? = null,
+)
+
+@Serializable
+data class AllCitiesData(
+    val allRealtimeCity: List<CityOptionDto> = emptyList(),
+)
+
+@Serializable
+data class CityOptionDto(
+    val cityId: String? = null,
+    val cityName: String? = null,
+    val pinyin: String? = null,
+    val hot: Double? = null,
+    val supportSubway: Double? = null,
+)

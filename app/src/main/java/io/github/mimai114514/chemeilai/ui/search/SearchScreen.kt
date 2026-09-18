@@ -15,8 +15,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.LocationCity
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,6 +32,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,10 +53,15 @@ import io.github.mimai114514.chemeilai.ui.common.rememberAppContainer
 fun SearchScreen(
     onStationClick: (Station) -> Unit,
     onLineClick: (SearchLine) -> Unit,
+    onPickCity: () -> Unit,
 ) {
     val container = rememberAppContainer()
     val viewModel: SearchViewModel = viewModel(factory = SearchViewModel.factory(container))
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshCity()
+    }
 
     Scaffold(
         topBar = {
@@ -86,7 +94,11 @@ fun SearchScreen(
         ) {
             val result = state.result
             when {
-                state.query.isBlank() -> Hint("输入线路号、站点名称或地点开始搜索")
+                state.cityResolved && state.cityName == null -> CityRequired(onPickCity)
+
+                state.query.isBlank() -> Hint(
+                    "当前城市：${state.cityName.orEmpty()}\n输入线路号、站点名称或地点开始搜索",
+                )
 
                 state.loading && result == null -> Box(
                     Modifier.fillMaxSize(),
@@ -271,5 +283,37 @@ private fun Hint(text: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(24.dp),
         )
+    }
+}
+
+@Composable
+private fun CityRequired(onPickCity: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.LocationCity,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            text = "请先选择城市",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(top = 12.dp),
+        )
+        Text(
+            text = "搜索线路和站点需要先确定城市。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        Button(onClick = onPickCity, modifier = Modifier.padding(top = 20.dp)) {
+            Text("选择城市")
+        }
     }
 }

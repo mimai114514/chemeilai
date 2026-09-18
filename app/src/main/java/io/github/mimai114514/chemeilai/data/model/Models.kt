@@ -5,6 +5,13 @@ data class City(
     val cityName: String?,
 )
 
+data class CityOption(
+    val cityId: String,
+    val name: String,
+    val pinyin: String,
+    val hot: Boolean,
+)
+
 data class Station(
     val sId: String,
     val name: String,

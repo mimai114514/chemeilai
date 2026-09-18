@@ -13,6 +13,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import io.github.mimai114514.chemeilai.ui.city.CityPickerScreen
 import io.github.mimai114514.chemeilai.ui.favorites.FavoritesScreen
 import io.github.mimai114514.chemeilai.ui.line.LineDetailScreen
 import io.github.mimai114514.chemeilai.ui.nearby.NearbyScreen
@@ -24,6 +25,7 @@ private object Routes {
     const val NEARBY = "nearby"
     const val SEARCH = "search"
     const val FAVORITES = "favorites"
+    const val CITY = "city"
     const val STATION = "station/{sId}?name={name}"
     const val REALTIME = "realtime/{sId}/{lineNo}/{direction}?name={name}"
     const val LINE = "line/{lineId}/{direction}?name={name}&start={start}&end={end}"
@@ -55,17 +57,21 @@ fun CheMeiLaiNavHost() {
     val currentRoute = backStackEntry?.destination?.route
     val isTopLevel = TopDestination.entries.any { it.route == currentRoute }
 
+    fun goTopLevel(route: String) {
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
     Scaffold(
         bottomBar = {
             if (isTopLevel) {
                 CheMeiLaiBottomBar(currentRoute = currentRoute) { destination ->
-                    navController.navigate(destination.route) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
-                        }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
+                    goTopLevel(destination.route)
                 }
             }
         },
@@ -85,6 +91,8 @@ fun CheMeiLaiNavHost() {
                             Routes.realtime(stop.sId, line.lineNo, line.direction, line.displayName),
                         )
                     },
+                    onPickCity = { navController.navigate(Routes.CITY) },
+                    onSearchClick = { goTopLevel(Routes.SEARCH) },
                 )
             }
 
@@ -104,6 +112,7 @@ fun CheMeiLaiNavHost() {
                             ),
                         )
                     },
+                    onPickCity = { navController.navigate(Routes.CITY) },
                 )
             }
 
@@ -142,6 +151,13 @@ fun CheMeiLaiNavHost() {
                             )
                         }
                     },
+                )
+            }
+
+            composable(Routes.CITY) {
+                CityPickerScreen(
+                    onBack = { navController.popBackStack() },
+                    onSelected = { navController.popBackStack() },
                 )
             }
 

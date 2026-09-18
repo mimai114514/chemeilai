@@ -26,6 +26,26 @@ class SessionStore(private val context: Context) {
         return generated
     }
 
+    suspend fun manualCity(): Pair<String, String>? {
+        val prefs = context.sessionDataStore.data.first()
+        val id = prefs[KEY_MANUAL_CITY_ID]?.takeIf { it.isNotBlank() } ?: return null
+        return id to prefs[KEY_MANUAL_CITY_NAME].orEmpty()
+    }
+
+    suspend fun setManualCity(cityId: String, cityName: String) {
+        context.sessionDataStore.edit {
+            it[KEY_MANUAL_CITY_ID] = cityId
+            it[KEY_MANUAL_CITY_NAME] = cityName
+        }
+    }
+
+    suspend fun clearManualCity() {
+        context.sessionDataStore.edit {
+            it.remove(KEY_MANUAL_CITY_ID)
+            it.remove(KEY_MANUAL_CITY_NAME)
+        }
+    }
+
     private fun randomBrowserId(): String {
         val random = (0..0xFFFFFF).random().toString(36).padStart(5, '0')
         return "browser_${System.currentTimeMillis().toString(36)}_$random"
@@ -33,5 +53,7 @@ class SessionStore(private val context: Context) {
 
     private companion object {
         val KEY_USER_ID = stringPreferencesKey("user_id")
+        val KEY_MANUAL_CITY_ID = stringPreferencesKey("manual_city_id")
+        val KEY_MANUAL_CITY_NAME = stringPreferencesKey("manual_city_name")
     }
 }
