@@ -8,12 +8,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowDropUp
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -143,8 +147,29 @@ fun StationLineList(
             )
         }
         if (lines.size > collapsedCount) {
-            TextButton(onClick = { expanded = !expanded }) {
-                Text(if (expanded) "收起" else "展开全部 ${lines.size} 条")
+            val hiddenCount = lines.size - collapsedCount
+            Surface(
+                onClick = { expanded = !expanded },
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.padding(start = 16.dp, top = 2.dp),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = if (expanded) Icons.Filled.ArrowDropUp else Icons.Filled.ArrowDropDown,
+                        contentDescription = if (expanded) "收起" else "展开",
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        text = "$hiddenCount",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
             }
         }
     }
