@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.mimai114514.chemeilai.data.model.LineDirection
 import io.github.mimai114514.chemeilai.data.model.StationLineGroup
 
@@ -65,20 +66,10 @@ fun StationLineRow(
             )
         }
         Spacer(Modifier.width(12.dp))
-        Column(horizontalAlignment = Alignment.End) {
-            EtaBadge(direction.etaText)
-            direction.desc?.takeIf { it.isNotBlank() }?.let { desc ->
-                Text(
-                    text = desc,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error,
-                    textAlign = TextAlign.End,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 120.dp),
-                )
-            }
-        }
+        VehicleInfo(
+            etaText = direction.etaText,
+            status = direction.desc?.takeIf { it.isNotBlank() },
+        )
     }
 }
 
@@ -92,28 +83,67 @@ private fun directionSummary(direction: LineDirection): String = buildString {
     }
 }
 
+/** 车辆信息区：有 ETA 时显示分钟数（必要时前置状态），没有 ETA 时显示状态文案。 */
+@Composable
+private fun VehicleInfo(etaText: String?, status: String?) {
+    val minutes = parseEtaMinutes(etaText)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (minutes != null && status != null) {
+            Text(
+                text = status,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 92.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+        }
+        when {
+            minutes != null -> EtaBadge(etaText)
+            status != null -> Text(
+                text = status,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.End,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 116.dp),
+            )
+
+            else -> Text(
+                text = "—",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 @Composable
 fun LineBadge(text: String, isFavorite: Boolean = false) {
     val container = if (isFavorite) FavoriteBadgeContainer else MaterialTheme.colorScheme.primaryContainer
     val content = if (isFavorite) FavoriteBadgeContent else MaterialTheme.colorScheme.onPrimaryContainer
     // 宽度按 3~6 个字符计算，短编号也占满最小宽度，超长省略
     val charCount = text.length.coerceIn(3, 6)
-    val badgeWidth = (charCount * 16).dp + 24.dp
+    val badgeWidth = (charCount * 12).dp + 12.dp
     Surface(
         color = container,
         contentColor = content,
-        shape = MaterialTheme.shapes.medium,
+        shape = MaterialTheme.shapes.small,
         modifier = Modifier.width(badgeWidth),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
+                .padding(horizontal = 6.dp, vertical = 4.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = text,
-                style = MaterialTheme.typography.titleMedium,
+                fontSize = 12.sp,
+                lineHeight = 15.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
