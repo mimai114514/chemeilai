@@ -31,10 +31,11 @@ data class NearbyStop(
     val distanceMeters: Int?,
     val lat: Double?,
     val lng: Double?,
-    val lines: List<NearbyLine>,
+    val lines: List<StationLineGroup>,
 )
 
-data class NearbyLine(
+/** 同一条线路在某一站的一个方向。lineId 每个方向都不同。 */
+data class LineDirection(
     val lineId: String,
     val lineNo: String,
     val displayName: String,
@@ -45,30 +46,29 @@ data class NearbyLine(
     val stationName: String,
     val nextStationName: String,
     val etaText: String?,
+    val etaMinutes: Int?,
+    val desc: String? = null,
+    val firstTime: String? = null,
+    val lastTime: String? = null,
+    val price: String? = null,
 )
+
+/** 同一线路在某个站/查询下的所有方向，按线路聚合后展示。 */
+data class StationLineGroup(
+    val key: String,
+    val displayName: String,
+    val directions: List<LineDirection>,
+    val isFavorite: Boolean = false,
+) {
+    fun defaultDirection(): LineDirection? =
+        directions.minByOrNull { it.etaMinutes ?: Int.MAX_VALUE } ?: directions.firstOrNull()
+}
 
 data class StationDetail(
     val sId: String,
     val name: String,
     val distanceMeters: Int?,
-    val lines: List<StationLine>,
-)
-
-data class StationLine(
-    val lineId: String,
-    val lineNo: String,
-    val displayName: String,
-    val direction: Int,
-    val startName: String?,
-    val endName: String?,
-    val targetOrder: Int,
-    val stationName: String,
-    val nextStationName: String,
-    val etaText: String?,
-    val desc: String?,
-    val firstTime: String?,
-    val lastTime: String?,
-    val price: String?,
+    val lines: List<StationLineGroup>,
 )
 
 data class LineLocator(
@@ -136,9 +136,23 @@ data class Poi(
     val lng: Double?,
 )
 
+/** cityLineList 中的一条线路（已含方向与首末班等信息）。 */
+data class CityLine(
+    val lineId: String,
+    val lineNo: String,
+    val displayName: String,
+    val direction: Int,
+    val startName: String?,
+    val endName: String?,
+    val firstTime: String?,
+    val lastTime: String?,
+    val price: String?,
+)
+
 data class LineDetail(
     val lineId: String,
     val displayName: String,
+    val direction: Int,
     val startName: String?,
     val endName: String?,
     val firstTime: String?,
@@ -147,7 +161,7 @@ data class LineDetail(
     val stations: List<RouteStation>,
 )
 
-enum class FavoriteType { ROUTE, STATION, LINE }
+enum class FavoriteType { STATION, LINE }
 
 data class Favorite(
     val id: String,
@@ -163,11 +177,8 @@ data class Favorite(
     val cityId: String? = null,
 ) {
     companion object {
-        fun routeId(stationId: String, lineNo: String, direction: Int): String =
-            "route|$stationId|$lineNo|$direction"
-
         fun stationKey(stationId: String): String = "station|$stationId"
 
-        fun lineKey(lineId: String, direction: Int): String = "line|$lineId|$direction"
+        fun lineKey(cityId: String?, lineName: String): String = "line|${cityId.orEmpty()}|$lineName"
     }
 }

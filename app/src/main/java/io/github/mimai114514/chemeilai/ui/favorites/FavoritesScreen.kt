@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Place
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,7 +24,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -39,12 +37,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mimai114514.chemeilai.data.model.Favorite
 import io.github.mimai114514.chemeilai.data.model.FavoriteType
+import io.github.mimai114514.chemeilai.ui.common.LineBadge
 import io.github.mimai114514.chemeilai.ui.common.rememberAppContainer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FavoritesScreen(
-    onRouteClick: (Favorite) -> Unit,
     onStationClick: (Favorite) -> Unit,
     onLineClick: (Favorite) -> Unit,
 ) {
@@ -52,21 +50,11 @@ fun FavoritesScreen(
     val viewModel: FavoritesViewModel = viewModel(factory = FavoritesViewModel.factory(container))
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    val routes = state.entries.filter { it.favorite.type == FavoriteType.ROUTE }
-    val stations = state.entries.filter { it.favorite.type == FavoriteType.STATION }
-    val lines = state.entries.filter { it.favorite.type == FavoriteType.LINE }
+    val stations = state.favorites.filter { it.type == FavoriteType.STATION }
+    val lines = state.favorites.filter { it.type == FavoriteType.LINE }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("收藏") },
-                actions = {
-                    IconButton(onClick = viewModel::refresh) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "刷新")
-                    }
-                },
-            )
-        },
+        topBar = { TopAppBar(title = { Text("收藏") }) },
     ) { padding ->
         Box(
             modifier = Modifier
@@ -74,17 +62,12 @@ fun FavoritesScreen(
                 .padding(padding),
         ) {
             when {
-                state.loading && state.entries.isEmpty() -> Box(
+                state.loading -> Box(
                     Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) { CircularProgressIndicator() }
 
-                state.error != null -> Box(
-                    Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) { Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error) }
-
-                state.entries.isEmpty() -> Box(
+                state.favorites.isEmpty() -> Box(
                     Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -101,41 +84,23 @@ fun FavoritesScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (routes.isNotEmpty()) {
-                        item { SectionHeader("到站关注") }
-                        items(routes, key = { it.favorite.id }) { entry ->
-                            RouteCard(
-                                entry = entry,
-                                onClick = { onRouteClick(entry.favorite) },
-                                onRemove = { viewModel.remove(entry.favorite) },
-                            )
-                        }
-                    }
                     if (stations.isNotEmpty()) {
                         item { SectionHeader("收藏站点") }
-                        items(stations, key = { it.favorite.id }) { entry ->
-                            SimpleCard(
-                                title = entry.favorite.stationName.orEmpty(),
-                                subtitle = null,
-                                badge = null,
-                                showPlaceIcon = true,
-                                onClick = { onStationClick(entry.favorite) },
-                                onRemove = { viewModel.remove(entry.favorite) },
+                        items(stations, key = { it.id }) { favorite ->
+                            FavoriteCard(
+                                favorite = favorite,
+                                onClick = { onStationClick(favorite) },
+                                onRemove = { viewModel.remove(favorite) },
                             )
                         }
                     }
                     if (lines.isNotEmpty()) {
                         item { SectionHeader("收藏线路") }
-                        items(lines, key = { it.favorite.id }) { entry ->
-                            SimpleCard(
-                                title = entry.favorite.lineName.orEmpty(),
-                                subtitle = listOfNotNull(entry.favorite.startName, entry.favorite.endName)
-                                    .joinToString(" → ")
-                                    .ifBlank { null },
-                                badge = entry.favorite.lineName,
-                                showPlaceIcon = false,
-                                onClick = { onLineClick(entry.favorite) },
-                                onRemove = { viewModel.remove(entry.favorite) },
+                        items(lines, key = { it.id }) { favorite ->
+                            FavoriteCard(
+                                favorite = favorite,
+                                onClick = { onLineClick(favorite) },
+                                onRemove = { viewModel.remove(favorite) },
                             )
                         }
                     }
@@ -157,11 +122,12 @@ private fun SectionHeader(title: String) {
 }
 
 @Composable
-private fun RouteCard(
-    entry: FavoriteEntry,
+private fun FavoriteCard(
+    favorite: Favorite,
     onClick: () -> Unit,
     onRemove: () -> Unit,
 ) {
+    val isStation = favorite.type == FavoriteType.STATION
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -172,111 +138,37 @@ private fun RouteCard(
             modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                shape = MaterialTheme.shapes.small,
-            ) {
-                Text(
-                    text = entry.favorite.lineName.orEmpty(),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = entry.favorite.stationName.orEmpty(),
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = listOfNotNull(entry.favorite.startName, entry.favorite.endName)
-                        .joinToString(" → "),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = entry.etaText ?: "—",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-            )
-            IconButton(onClick = onRemove) {
-                Icon(
-                    Icons.Filled.Delete,
-                    contentDescription = "删除收藏",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SimpleCard(
-    title: String,
-    subtitle: String?,
-    badge: String?,
-    showPlaceIcon: Boolean,
-    onClick: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (badge != null) {
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    shape = MaterialTheme.shapes.small,
-                ) {
-                    Text(
-                        text = badge,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                    )
-                }
-            } else if (showPlaceIcon) {
+            if (isStation) {
                 Icon(
                     imageVector = Icons.Filled.Place,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.width(24.dp),
                 )
+            } else {
+                LineBadge(favorite.lineName.orEmpty())
             }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = title,
+                    text = if (isStation) favorite.stationName.orEmpty() else favorite.lineName.orEmpty(),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                subtitle?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                if (!isStation) {
+                    val subtitle = listOfNotNull(favorite.startName, favorite.endName)
+                        .joinToString(" → ")
+                    if (subtitle.isNotBlank()) {
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
             IconButton(onClick = onRemove) {

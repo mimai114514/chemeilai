@@ -7,7 +7,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.mimai114514.chemeilai.AppContainer
 import io.github.mimai114514.chemeilai.data.model.Favorite
 import io.github.mimai114514.chemeilai.data.model.FavoriteType
-import io.github.mimai114514.chemeilai.data.model.StationLine
+import io.github.mimai114514.chemeilai.data.model.StationLineGroup
 import io.github.mimai114514.chemeilai.data.repository.CheLaileRepository
 import io.github.mimai114514.chemeilai.location.LocationProvider
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,9 +21,10 @@ data class StationDetailUiState(
     val sId: String = "",
     val name: String = "",
     val distanceMeters: Int? = null,
-    val lines: List<StationLine> = emptyList(),
+    val lines: List<StationLineGroup> = emptyList(),
     val error: String? = null,
     val isFavorite: Boolean = false,
+    val selections: Map<String, Int> = emptyMap(),
 )
 
 class StationDetailViewModel(
@@ -70,6 +71,14 @@ class StationDetailViewModel(
                     }
                 }
         }
+    }
+
+    fun cycleDirection(group: StationLineGroup) {
+        if (group.directions.size < 2) return
+        val current = _state.value.selections[group.key] ?: group.defaultDirection()?.direction
+        val index = group.directions.indexOfFirst { it.direction == current }.coerceAtLeast(0)
+        val next = group.directions[(index + 1) % group.directions.size].direction
+        _state.update { it.copy(selections = it.selections + (group.key to next)) }
     }
 
     fun toggleFavorite() {

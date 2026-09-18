@@ -6,6 +6,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.mimai114514.chemeilai.AppContainer
 import io.github.mimai114514.chemeilai.data.model.NearbyStop
+import io.github.mimai114514.chemeilai.data.model.StationLineGroup
 import io.github.mimai114514.chemeilai.data.repository.CheLaileRepository
 import io.github.mimai114514.chemeilai.location.LocationProvider
 import io.github.mimai114514.chemeilai.location.LocationResult
@@ -23,6 +24,7 @@ data class NearbyUiState(
     val error: String? = null,
     val permissionRequired: Boolean = false,
     val servicesDisabled: Boolean = false,
+    val selections: Map<String, Int> = emptyMap(),
 )
 
 class NearbyViewModel(
@@ -108,7 +110,18 @@ class NearbyViewModel(
         }
     }
 
+    fun cycleDirection(stopId: String, group: StationLineGroup) {
+        if (group.directions.size < 2) return
+        val key = selectionKey(stopId, group.key)
+        val current = _state.value.selections[key] ?: group.defaultDirection()?.direction
+        val index = group.directions.indexOfFirst { it.direction == current }.coerceAtLeast(0)
+        val next = group.directions[(index + 1) % group.directions.size].direction
+        _state.update { it.copy(selections = it.selections + (key to next)) }
+    }
+
     companion object {
+        fun selectionKey(stopId: String, groupKey: String): String = "$stopId|$groupKey"
+
         fun factory(container: AppContainer) = viewModelFactory {
             initializer { NearbyViewModel(container.repository, container.locationProvider) }
         }

@@ -21,6 +21,7 @@ data class SearchUiState(
     val loading: Boolean = false,
     val result: SearchResult? = null,
     val error: String? = null,
+    val cityId: String? = null,
     val cityName: String? = null,
     val cityResolved: Boolean = false,
 )
@@ -42,7 +43,7 @@ class SearchViewModel(
     fun refreshCity() {
         viewModelScope.launch {
             val city = repository.currentCity()
-            _state.update { it.copy(cityName = city?.cityName, cityResolved = true) }
+            _state.update { it.copy(cityId = city?.cityId, cityName = city?.cityName, cityResolved = true) }
         }
     }
 

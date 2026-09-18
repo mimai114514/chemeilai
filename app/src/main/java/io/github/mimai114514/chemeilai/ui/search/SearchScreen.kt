@@ -55,7 +55,7 @@ import io.github.mimai114514.chemeilai.ui.common.rememberAppContainer
 fun SearchScreen(
     onBack: () -> Unit,
     onStationClick: (Station) -> Unit,
-    onLineClick: (SearchLine) -> Unit,
+    onLineClick: (SearchLine, String?) -> Unit,
     onPickCity: () -> Unit,
 ) {
     val container = rememberAppContainer()
@@ -133,7 +133,7 @@ fun SearchScreen(
                     result != null -> SearchResults(
                         result = result,
                         onStationClick = onStationClick,
-                        onLineClick = onLineClick,
+                        onLineClick = { line -> onLineClick(line, state.cityId) },
                     )
                 }
             }

@@ -1,6 +1,10 @@
 package io.github.mimai114514.chemeilai.ui.navigation
 
 import android.net.Uri
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -28,7 +32,7 @@ private object Routes {
     const val CITY = "city"
     const val STATION = "station/{sId}?name={name}"
     const val REALTIME = "realtime/{sId}/{lineNo}/{direction}?name={name}"
-    const val LINE = "line/{lineId}/{direction}?name={name}&start={start}&end={end}"
+    const val LINE = "line/{lineName}?cityId={cityId}&direction={direction}&lineId={lineId}"
 
     fun station(sId: String, name: String): String =
         "station/${Uri.encode(sId)}?name=${Uri.encode(name)}"
@@ -36,17 +40,11 @@ private object Routes {
     fun realtime(sId: String, lineNo: String, direction: Int, name: String): String =
         "realtime/${Uri.encode(sId)}/${Uri.encode(lineNo)}/$direction?name=${Uri.encode(name)}"
 
-    fun line(
-        lineId: String,
-        direction: Int,
-        name: String,
-        start: String?,
-        end: String?,
-    ): String = buildString {
-        append("line/").append(Uri.encode(lineId)).append('/').append(direction)
-        append("?name=").append(Uri.encode(name))
-        append("&start=").append(Uri.encode(start.orEmpty()))
-        append("&end=").append(Uri.encode(end.orEmpty()))
+    fun line(lineName: String, cityId: String?, direction: Int?, lineId: String?): String = buildString {
+        append("line/").append(Uri.encode(lineName))
+        append("?cityId=").append(Uri.encode(cityId.orEmpty()))
+        append("&direction=").append(direction ?: -1)
+        append("&lineId=").append(Uri.encode(lineId.orEmpty()))
     }
 }
 
@@ -96,20 +94,25 @@ fun CheMeiLaiNavHost() {
                 )
             }
 
-            composable(Routes.SEARCH) {
+            composable(
+                route = Routes.SEARCH,
+                enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn() },
+                exitTransition = { slideOutHorizontally(targetOffsetX = { -it / 4 }) + fadeOut() },
+                popEnterTransition = { slideInHorizontally(initialOffsetX = { -it / 4 }) + fadeIn() },
+                popExitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut() },
+            ) {
                 SearchScreen(
                     onBack = { navController.popBackStack() },
                     onStationClick = { station ->
                         navController.navigate(Routes.station(station.sId, station.name))
                     },
-                    onLineClick = { line ->
+                    onLineClick = { line, cityId ->
                         navController.navigate(
                             Routes.line(
-                                lineId = line.lineId,
+                                lineName = line.displayName,
+                                cityId = cityId,
                                 direction = line.direction,
-                                name = line.displayName,
-                                start = line.startName,
-                                end = line.endName,
+                                lineId = line.lineId,
                             ),
                         )
                     },
@@ -119,16 +122,6 @@ fun CheMeiLaiNavHost() {
 
             composable(Routes.FAVORITES) {
                 FavoritesScreen(
-                    onRouteClick = { favorite ->
-                        val stationId = favorite.stationId
-                        val lineNo = favorite.lineNo
-                        val direction = favorite.direction
-                        if (stationId != null && lineNo != null && direction != null) {
-                            navController.navigate(
-                                Routes.realtime(stationId, lineNo, direction, favorite.lineName.orEmpty()),
-                            )
-                        }
-                    },
                     onStationClick = { favorite ->
                         val stationId = favorite.stationId
                         if (stationId != null) {
@@ -138,19 +131,14 @@ fun CheMeiLaiNavHost() {
                         }
                     },
                     onLineClick = { favorite ->
-                        val lineId = favorite.lineId
-                        val direction = favorite.direction
-                        if (lineId != null && direction != null) {
-                            navController.navigate(
-                                Routes.line(
-                                    lineId = lineId,
-                                    direction = direction,
-                                    name = favorite.lineName.orEmpty(),
-                                    start = favorite.startName,
-                                    end = favorite.endName,
-                                ),
-                            )
-                        }
+                        navController.navigate(
+                            Routes.line(
+                                lineName = favorite.lineName.orEmpty(),
+                                cityId = favorite.cityId,
+                                direction = favorite.direction,
+                                lineId = favorite.lineId,
+                            ),
+                        )
                     },
                 )
             }
@@ -208,28 +196,26 @@ fun CheMeiLaiNavHost() {
             composable(
                 route = Routes.LINE,
                 arguments = listOf(
-                    navArgument("lineId") { type = NavType.StringType },
-                    navArgument("direction") { type = NavType.IntType },
-                    navArgument("name") {
+                    navArgument("lineName") { type = NavType.StringType },
+                    navArgument("cityId") {
                         type = NavType.StringType
                         defaultValue = ""
                     },
-                    navArgument("start") {
-                        type = NavType.StringType
-                        defaultValue = ""
+                    navArgument("direction") {
+                        type = NavType.IntType
+                        defaultValue = -1
                     },
-                    navArgument("end") {
+                    navArgument("lineId") {
                         type = NavType.StringType
                         defaultValue = ""
                     },
                 ),
             ) { entry ->
                 LineDetailScreen(
-                    lineId = entry.arguments?.getString("lineId").orEmpty(),
-                    displayName = entry.arguments?.getString("name").orEmpty(),
-                    direction = entry.arguments?.getInt("direction") ?: 0,
-                    startName = entry.arguments?.getString("start")?.takeIf { it.isNotBlank() },
-                    endName = entry.arguments?.getString("end")?.takeIf { it.isNotBlank() },
+                    cityId = entry.arguments?.getString("cityId")?.takeIf { it.isNotBlank() },
+                    lineName = entry.arguments?.getString("lineName").orEmpty(),
+                    direction = entry.arguments?.getInt("direction")?.takeIf { it >= 0 },
+                    lineId = entry.arguments?.getString("lineId")?.takeIf { it.isNotBlank() },
                     onBack = { navController.popBackStack() },
                     onStationClick = { station ->
                         val sId = station.sId

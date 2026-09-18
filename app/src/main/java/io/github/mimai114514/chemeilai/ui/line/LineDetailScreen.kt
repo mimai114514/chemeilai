@@ -1,6 +1,7 @@
 package io.github.mimai114514.chemeilai.ui.line
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -24,6 +26,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.mimai114514.chemeilai.data.model.CityLine
 import io.github.mimai114514.chemeilai.data.model.LineDetail
 import io.github.mimai114514.chemeilai.data.model.RouteStation
 import io.github.mimai114514.chemeilai.ui.common.rememberAppContainer
@@ -47,11 +51,10 @@ import io.github.mimai114514.chemeilai.ui.common.rememberAppContainer
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LineDetailScreen(
-    lineId: String,
-    displayName: String,
-    direction: Int,
-    startName: String?,
-    endName: String?,
+    cityId: String?,
+    lineName: String,
+    direction: Int?,
+    lineId: String?,
     onBack: () -> Unit,
     onStationClick: (RouteStation) -> Unit,
 ) {
@@ -59,11 +62,10 @@ fun LineDetailScreen(
     val viewModel: LineDetailViewModel = viewModel(
         factory = LineDetailViewModel.factory(
             container = container,
-            lineId = lineId,
-            displayName = displayName,
+            cityId = cityId,
+            lineName = lineName,
             direction = direction,
-            startName = startName,
-            endName = endName,
+            lineId = lineId,
         ),
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -73,7 +75,7 @@ fun LineDetailScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = state.detail?.displayName ?: displayName.ifBlank { "线路详情" },
+                        text = state.lineName.ifBlank { lineName.ifBlank { "线路详情" } },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -104,30 +106,74 @@ fun LineDetailScreen(
             )
         },
     ) { padding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            val detail = state.detail
-            when {
-                state.loading && detail == null -> Box(
-                    Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) { CircularProgressIndicator() }
-
-                state.error != null -> Box(
-                    Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) { Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error) }
-
-                detail != null -> LineDetailContent(
-                    detail = detail,
-                    onStationClick = onStationClick,
+            if (state.directions.size > 1) {
+                DirectionTabs(
+                    directions = state.directions,
+                    selectedDirection = state.selectedDirection,
+                    onSelect = viewModel::selectDirection,
                 )
+            }
+
+            Box(modifier = Modifier.fillMaxSize()) {
+                val detail = state.detail
+                when {
+                    state.loading && detail == null -> Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) { CircularProgressIndicator() }
+
+                    state.error != null -> Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) { Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error) }
+
+                    detail != null -> LineDetailContent(
+                        detail = detail,
+                        onStationClick = onStationClick,
+                    )
+                }
             }
         }
     }
+}
+
+@Composable
+private fun DirectionTabs(
+    directions: List<CityLine>,
+    selectedDirection: Int,
+    onSelect: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        directions.forEach { direction ->
+            FilterChip(
+                selected = direction.direction == selectedDirection,
+                onClick = { onSelect(direction.direction) },
+                label = {
+                    Text(
+                        text = directionLabel(direction),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+            )
+        }
+    }
+}
+
+private fun directionLabel(direction: CityLine): String {
+    val label = listOfNotNull(direction.startName, direction.endName).joinToString(" → ")
+    return label.ifBlank { "方向 ${direction.direction}" }
 }
 
 @Composable

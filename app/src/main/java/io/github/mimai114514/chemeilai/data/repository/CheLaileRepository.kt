@@ -10,13 +10,13 @@ import io.github.mimai114514.chemeilai.data.local.SessionStore
 import io.github.mimai114514.chemeilai.data.local.StationEntity
 import io.github.mimai114514.chemeilai.data.model.BusEta
 import io.github.mimai114514.chemeilai.data.model.City
+import io.github.mimai114514.chemeilai.data.model.CityLine
 import io.github.mimai114514.chemeilai.data.model.CityOption
 import io.github.mimai114514.chemeilai.data.model.Favorite
 import io.github.mimai114514.chemeilai.data.model.FavoriteType
-import io.github.mimai114514.chemeilai.data.model.LineDetail
+import io.github.mimai114514.chemeilai.data.model.LineDirection
 import io.github.mimai114514.chemeilai.data.model.LineLocator
 import io.github.mimai114514.chemeilai.data.model.Nearby
-import io.github.mimai114514.chemeilai.data.model.NearbyLine
 import io.github.mimai114514.chemeilai.data.model.NearbyStop
 import io.github.mimai114514.chemeilai.data.model.Poi
 import io.github.mimai114514.chemeilai.data.model.Realtime
@@ -25,7 +25,7 @@ import io.github.mimai114514.chemeilai.data.model.SearchLine
 import io.github.mimai114514.chemeilai.data.model.SearchResult
 import io.github.mimai114514.chemeilai.data.model.Station
 import io.github.mimai114514.chemeilai.data.model.StationDetail
-import io.github.mimai114514.chemeilai.data.model.StationLine
+import io.github.mimai114514.chemeilai.data.model.StationLineGroup
 import io.github.mimai114514.chemeilai.data.remote.CheLaileApi
 import io.github.mimai114514.chemeilai.data.remote.CheLaileApiFactory
 import io.github.mimai114514.chemeilai.data.remote.CityLineListDto
@@ -44,14 +44,14 @@ import io.github.mimai114514.chemeilai.data.remote.StationDetailDto
 import io.github.mimai114514.chemeilai.data.remote.StationLineEntryDto
 import io.github.mimai114514.chemeilai.data.remote.StnStateDto
 import io.github.mimai114514.chemeilai.data.remote.requireData
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
@@ -66,6 +66,9 @@ class CheLaileRepository(
 
     @Volatile
     private var allCitiesCache: List<CityOption>? = null
+
+    @Volatile
+    private var cityLinesCache: List<CityLine>? = null
 
     suspend fun manualCity(): City? = session.manualCity()?.let { (id, name) ->
         City(id, name.ifBlank { null })
@@ -92,9 +95,9 @@ class CheLaileRepository(
     }
 
     fun observeFavorites(): Flow<List<Favorite>> =
-        dao.observeFavorites().map { list -> list.map { it.toFavorite() } }
+        dao.observeFavorites().map { list -> list.mapNotNull { it.toFavoriteOrNull() } }
 
-    suspend fun favorites(): List<Favorite> = dao.favorites().map { it.toFavorite() }
+    suspend fun favorites(): List<Favorite> = dao.favorites().mapNotNull { it.toFavoriteOrNull() }
 
     suspend fun isFavorite(id: String): Boolean = dao.isFavorite(id)
 
@@ -121,44 +124,47 @@ class CheLaileRepository(
         )
     }
 
-    suspend fun lineRoute(
+    /** cityLineList 全量线路（含方向与首末班），用于线路详情的换向。 */
+    suspend fun cityLines(forceRefresh: Boolean = false): List<CityLine> {
+        if (!forceRefresh) cityLinesCache?.let { return it }
+        val dto: CityLineListDto = plain(
+            call = api::cityLineList,
+            biz = emptyMap(),
+            cityId = currentCity()?.cityId,
+            lat = null,
+            lng = null,
+        )
+        val lines = dto.allLines.values.flatten()
+            .mapNotNull { it.toCityLine() }
+            .distinctBy { it.lineId }
+        if (lines.isNotEmpty()) cityLinesCache = lines
+        return lines
+    }
+
+    /** 同一条线路的所有方向；lineName 为展示名，lineNo 为原始编码（可选，用于兜底匹配）。 */
+    suspend fun lineDirections(lineName: String, lineNo: String? = null): List<CityLine> {
+        val key = lineName.trim()
+        if (key.isEmpty()) return emptyList()
+        val matches = cityLines().filter {
+            it.displayName == key || it.lineNo == key || (lineNo != null && it.lineNo == lineNo)
+        }
+        // cityLineList 不返回 direction，按顺序编号即可（界面用起终点区分）
+        return matches.mapIndexed { index, line -> line.copy(direction = index) }
+    }
+
+    suspend fun lineRouteStations(
         lineId: String,
-        displayName: String,
-        direction: Int,
-        startName: String? = null,
-        endName: String? = null,
         lat: Double? = null,
         lng: Double? = null,
-    ): LineDetail {
-        val cityId = currentCity()?.cityId
+    ): List<RouteStation> {
         val dto: LineRouteDto = plain(
             call = api::lineRoute,
             biz = mapOf("lineId" to lineId),
-            cityId = cityId,
+            cityId = currentCity()?.cityId,
             lat = lat,
             lng = lng,
         )
-        val meta = runCatching { lineMeta(lineId, cityId, lat, lng) }.getOrNull()
-        return LineDetail(
-            lineId = lineId,
-            displayName = displayName.ifBlank { displayLineName(meta?.lineNo, meta?.name) },
-            startName = startName ?: meta?.startSn,
-            endName = endName ?: meta?.endSn,
-            firstTime = meta?.firstTime,
-            lastTime = meta?.lastTime,
-            price = meta?.price,
-            stations = dto.stations.mapNotNull { it.toRouteStation() },
-        )
-    }
-
-    private suspend fun lineMeta(
-        lineId: String,
-        cityId: String?,
-        lat: Double?,
-        lng: Double?,
-    ): LineDto? {
-        val dto: CityLineListDto = plain(api::cityLineList, emptyMap(), cityId, lat, lng)
-        return dto.allLines.values.flatten().firstOrNull { it.lineId == lineId }
+        return dto.stations.mapNotNull { it.toRouteStation() }
     }
 
     suspend fun resolveCity(lat: Double, lng: Double): City {
@@ -205,6 +211,7 @@ class CheLaileRepository(
             lat = lat,
             lng = lng,
         )
+        val favorites = favoriteLineNames(city.cityId)
         val stops = dto.nearLines.map { stop ->
             NearbyStop(
                 sId = stop.sId.orEmpty(),
@@ -212,7 +219,7 @@ class CheLaileRepository(
                 distanceMeters = stop.distance?.roundToInt(),
                 lat = stop.lat,
                 lng = stop.lng,
-                lines = stop.lines.mapNotNull { it.toNearbyLine(stop.sn) },
+                lines = stop.lines.mapNotNull { it.toLineDirection(stop.sn) }.toGroups(favorites),
             )
         }
         cacheStations(city.cityId, stops)
@@ -236,11 +243,11 @@ class CheLaileRepository(
         )
         val resolvedStationId = dto.sId ?: stationId
         val stationName = dto.sn ?: dao.station(stationId)?.name ?: stationId
-        val lines = dto.lines.mapNotNull { entry -> entry.toStationLine(stationName) }
-        if (lines.isNotEmpty()) {
+        val directions = dto.lines.mapNotNull { it.toLineDirection(stationName) }
+        if (directions.isNotEmpty()) {
             val now = System.currentTimeMillis()
             dao.upsertLocators(
-                lines.map { line ->
+                directions.map { line ->
                     LineLocatorEntity(
                         stationId = resolvedStationId,
                         lineNo = line.lineNo,
@@ -260,7 +267,7 @@ class CheLaileRepository(
             sId = resolvedStationId,
             name = stationName,
             distanceMeters = dto.distance?.roundToInt(),
-            lines = lines,
+            lines = directions.toGroups(favoriteLineNames(city)),
         )
     }
 
@@ -326,6 +333,15 @@ class CheLaileRepository(
         )
     }
 
+    private suspend fun favoriteLineNames(cityId: String?): Set<String> =
+        dao.favorites()
+            .filter {
+                it.type == FavoriteType.LINE.name &&
+                    (cityId == null || it.cityId == null || it.cityId == cityId)
+            }
+            .mapNotNull { it.lineName }
+            .toSet()
+
     private suspend fun locator(stationId: String, lineNo: String, direction: Int): LineLocator? =
         dao.locator(stationId, lineNo, direction)?.let { entity ->
             LineLocator(
@@ -367,10 +383,10 @@ class CheLaileRepository(
         return null to null
     }
 
-    private fun StationLineEntryDto.toNearbyLine(fallbackStation: String?): NearbyLine? {
+    private fun StationLineEntryDto.toLineDirection(fallbackStation: String?): LineDirection? {
         val line = line ?: return null
         val lineId = line.lineId ?: return null
-        return NearbyLine(
+        return LineDirection(
             lineId = lineId,
             lineNo = line.lineNo ?: line.name.orEmpty(),
             displayName = displayLineName(line.lineNo, line.name),
@@ -381,23 +397,7 @@ class CheLaileRepository(
             stationName = targetStation?.sn ?: fallbackStation.orEmpty(),
             nextStationName = nextStation?.sn.orEmpty(),
             etaText = etaText(stnStates),
-        )
-    }
-
-    private fun StationLineEntryDto.toStationLine(fallbackStation: String?): StationLine? {
-        val line = line ?: return null
-        val lineId = line.lineId ?: return null
-        return StationLine(
-            lineId = lineId,
-            lineNo = line.lineNo ?: line.name.orEmpty(),
-            displayName = displayLineName(line.lineNo, line.name),
-            direction = line.direction?.roundToInt() ?: 0,
-            startName = line.startSn,
-            endName = line.endSn,
-            targetOrder = targetStation?.order?.roundToInt() ?: 0,
-            stationName = targetStation?.sn ?: fallbackStation.orEmpty(),
-            nextStationName = nextStation?.sn.orEmpty(),
-            etaText = etaText(stnStates),
+            etaMinutes = etaMinutes(stnStates),
             desc = line.desc ?: line.shortDesc,
             firstTime = line.firstTime,
             lastTime = line.lastTime,
@@ -405,19 +405,34 @@ class CheLaileRepository(
         )
     }
 
-    private fun FavoriteEntity.toFavorite(): Favorite = Favorite(
-        id = id,
-        type = runCatching { FavoriteType.valueOf(type) }.getOrDefault(FavoriteType.ROUTE),
-        stationId = stationId,
-        stationName = stationName,
-        lineId = lineId,
-        lineNo = lineNo,
-        lineName = lineName,
-        direction = direction,
-        startName = startName,
-        endName = endName,
-        cityId = cityId,
-    )
+    private fun List<LineDirection>.toGroups(favoriteLines: Set<String>): List<StationLineGroup> =
+        groupBy { it.displayName }
+            .map { (name, directions) ->
+                StationLineGroup(
+                    key = name,
+                    displayName = name,
+                    directions = directions.sortedBy { it.direction },
+                    isFavorite = name in favoriteLines,
+                )
+            }
+            .sortedWith(compareByDescending { it.isFavorite })
+
+    private fun FavoriteEntity.toFavoriteOrNull(): Favorite? {
+        val parsed = runCatching { FavoriteType.valueOf(type) }.getOrNull() ?: return null
+        return Favorite(
+            id = id,
+            type = parsed,
+            stationId = stationId,
+            stationName = stationName,
+            lineId = lineId,
+            lineNo = lineNo,
+            lineName = lineName,
+            direction = direction,
+            startName = startName,
+            endName = endName,
+            cityId = cityId,
+        )
+    }
 
     private fun Favorite.toEntity(): FavoriteEntity = FavoriteEntity(
         id = id,
@@ -433,6 +448,25 @@ class CheLaileRepository(
         cityId = cityId,
         createdAt = System.currentTimeMillis(),
     )
+
+    private fun LineDto.toCityLine(): CityLine? {
+        val id = lineId?.takeIf { it.isNotBlank() } ?: return null
+        val rawNo = lineNo?.takeIf { it.isNotBlank() } ?: lineName
+        val rawName = name?.takeIf { it.isNotBlank() } ?: lineName
+        val label = displayLineName(rawNo, rawName).ifBlank { rawName.orEmpty() }
+        if (label.isBlank()) return null
+        return CityLine(
+            lineId = id,
+            lineNo = rawNo ?: label,
+            displayName = label,
+            direction = direction?.roundToInt() ?: 0,
+            startName = startSn ?: startStopName,
+            endName = endSn ?: endStopName,
+            firstTime = firstTime,
+            lastTime = lastTime,
+            price = price,
+        )
+    }
 
     private fun CityOptionDto.toCityOption(): CityOption? {
         val id = cityId?.takeIf { it.isNotBlank() } ?: return null
@@ -492,6 +526,13 @@ class CheLaileRepository(
         val travel = state.travelTime
         if (travel != null && travel > 0) return "${ceil(travel / 60.0).toInt()}分钟"
         return state.timeStr
+    }
+
+    private fun etaMinutes(states: List<StnStateDto>): Int? {
+        val state = states.firstOrNull() ?: return null
+        state.value?.takeIf { it >= 0 }?.let { return it.roundToInt() }
+        state.travelTime?.takeIf { it > 0 }?.let { return ceil(it / 60.0).toInt() }
+        return null
     }
 
     private fun displayLineName(lineNo: String?, name: String?): String {

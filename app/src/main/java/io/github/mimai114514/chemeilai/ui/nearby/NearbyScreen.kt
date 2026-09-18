@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -34,7 +33,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -48,18 +46,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import io.github.mimai114514.chemeilai.data.model.NearbyLine
+import io.github.mimai114514.chemeilai.data.model.LineDirection
 import io.github.mimai114514.chemeilai.data.model.NearbyStop
+import io.github.mimai114514.chemeilai.data.model.StationLineGroup
+import io.github.mimai114514.chemeilai.ui.common.StationLineRow
 import io.github.mimai114514.chemeilai.ui.common.formatDistance
-import io.github.mimai114514.chemeilai.ui.common.parseEtaMinutes
-import io.github.mimai114514.chemeilai.ui.common.parseEtaUnit
 import io.github.mimai114514.chemeilai.ui.common.rememberAppContainer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NearbyScreen(
     onStationClick: (NearbyStop) -> Unit,
-    onLineClick: (NearbyStop, NearbyLine) -> Unit,
+    onLineClick: (NearbyStop, LineDirection) -> Unit,
     onPickCity: () -> Unit,
     onSearchClick: () -> Unit,
 ) {
@@ -142,8 +140,10 @@ fun NearbyScreen(
 
                 else -> StopList(
                     stops = state.stops,
+                    selections = state.selections,
                     onStationClick = onStationClick,
                     onLineClick = onLineClick,
+                    onSwapDirection = viewModel::cycleDirection,
                 )
             }
         }
@@ -196,8 +196,10 @@ private fun ManualCityPanel(
 @Composable
 private fun StopList(
     stops: List<NearbyStop>,
+    selections: Map<String, Int>,
     onStationClick: (NearbyStop) -> Unit,
-    onLineClick: (NearbyStop, NearbyLine) -> Unit,
+    onLineClick: (NearbyStop, LineDirection) -> Unit,
+    onSwapDirection: (String, StationLineGroup) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -205,7 +207,13 @@ private fun StopList(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(stops, key = { it.sId }) { stop ->
-            StopCard(stop = stop, onStationClick = onStationClick, onLineClick = onLineClick)
+            StopCard(
+                stop = stop,
+                selections = selections,
+                onStationClick = onStationClick,
+                onLineClick = onLineClick,
+                onSwapDirection = onSwapDirection,
+            )
         }
     }
 }
@@ -213,8 +221,10 @@ private fun StopList(
 @Composable
 private fun StopCard(
     stop: NearbyStop,
+    selections: Map<String, Int>,
     onStationClick: (NearbyStop) -> Unit,
-    onLineClick: (NearbyStop, NearbyLine) -> Unit,
+    onLineClick: (NearbyStop, LineDirection) -> Unit,
+    onSwapDirection: (String, StationLineGroup) -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -253,90 +263,15 @@ private fun StopCard(
 
             if (stop.lines.isNotEmpty()) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                stop.lines.forEach { line ->
-                    LineRow(
-                        line = line,
-                        onClick = { onLineClick(stop, line) },
+                stop.lines.forEach { group ->
+                    StationLineRow(
+                        group = group,
+                        selectedDirection = selections[NearbyViewModel.selectionKey(stop.sId, group.key)],
+                        onSwapDirection = { onSwapDirection(stop.sId, group) },
+                        onClick = { direction -> onLineClick(stop, direction) },
                     )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun LineRow(
-    line: NearbyLine,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Surface(
-            color = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            shape = MaterialTheme.shapes.small,
-            modifier = Modifier.widthIn(max = 150.dp),
-        ) {
-            Text(
-                text = line.displayName,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = listOfNotNull(line.startName, line.endName).joinToString(" → "),
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = "下一站 ${line.nextStationName.ifBlank { "—" }}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        EtaBadge(line.etaText)
-    }
-}
-
-@Composable
-private fun EtaBadge(etaText: String?) {
-    val minutes = parseEtaMinutes(etaText)
-    Column(horizontalAlignment = Alignment.End) {
-        if (minutes != null) {
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    text = minutes.toString(),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Text(
-                    text = parseEtaUnit(etaText).ifBlank { "分钟" },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 2.dp, bottom = 3.dp),
-                )
-            }
-        } else {
-            Text(
-                text = etaText ?: "—",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
