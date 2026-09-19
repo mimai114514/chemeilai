@@ -28,6 +28,7 @@ import io.github.mimai114514.chemeilai.ui.nearby.NearbyScreen
 import io.github.mimai114514.chemeilai.ui.realtime.LineRealtimeScreen
 import io.github.mimai114514.chemeilai.ui.realtime.RealtimeScreen
 import io.github.mimai114514.chemeilai.ui.search.SearchScreen
+import io.github.mimai114514.chemeilai.ui.settings.MockLocationScreen
 import io.github.mimai114514.chemeilai.ui.settings.SettingsScreen
 import io.github.mimai114514.chemeilai.ui.station.StationDetailScreen
 
@@ -36,6 +37,7 @@ private object Routes {
     const val SEARCH = "search"
     const val FAVORITES = "favorites"
     const val SETTINGS = "settings"
+    const val MOCK_LOCATION = "mock_location"
     const val CITY = "city"
     const val STATION = "station/{sId}?name={name}&direction={direction}"
     const val REALTIME = "realtime/{sId}/{lineNo}/{direction}?name={name}"
@@ -171,7 +173,14 @@ fun CheMeiLaiNavHost(startDestination: String = Routes.NEARBY) {
             }
 
             composable(Routes.SETTINGS) {
-                SettingsScreen(onPickCity = { navController.navigate(Routes.CITY) })
+                SettingsScreen(
+                    onPickCity = { navController.navigate(Routes.CITY) },
+                    onMockLocationClick = { navController.navigate(Routes.MOCK_LOCATION) },
+                )
+            }
+
+            composable(Routes.MOCK_LOCATION) {
+                MockLocationScreen(onBack = { navController.popBackStack() })
             }
 
             composable(Routes.CITY) {

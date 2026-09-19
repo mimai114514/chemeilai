@@ -11,7 +11,7 @@ import io.github.mimai114514.chemeilai.data.model.FavoriteType
 import io.github.mimai114514.chemeilai.data.model.NearestStation
 import io.github.mimai114514.chemeilai.data.model.StationLineGroup
 import io.github.mimai114514.chemeilai.data.repository.CheLaileRepository
-import io.github.mimai114514.chemeilai.location.LocationProvider
+import io.github.mimai114514.chemeilai.location.LocationResolver
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -55,7 +55,7 @@ data class FavoritesUiState(
 
 class FavoritesViewModel(
     private val repository: CheLaileRepository,
-    private val locationProvider: LocationProvider,
+    private val locationResolver: LocationResolver,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(FavoritesUiState())
@@ -92,9 +92,17 @@ class FavoritesViewModel(
 
     private suspend fun resolveAll(showLoading: Boolean = false) {
         if (showLoading) _state.update { it.copy(loading = true) }
-        val location = locationProvider.lastKnown()
         val stationFavorites = favorites.filter { it.type == FavoriteType.STATION }
         val lineFavorites = favorites.filter { it.type == FavoriteType.LINE }
+        // 先把收藏条目本身渲染出来，定位与实时数据后到再补，避免整页等定位
+        _state.update {
+            it.copy(
+                loading = false,
+                stations = stationFavorites.map { favorite -> FavoriteStationStatus(favorite) },
+                lines = lineFavorites.map { favorite -> FavoriteLineStatus(favorite) },
+            )
+        }
+        val location = locationResolver.lastKnown()
         val reversed = _state.value.reversed
 
         val stations = coroutineScope {
@@ -163,7 +171,7 @@ class FavoritesViewModel(
 
     companion object {
         fun factory(container: AppContainer) = viewModelFactory {
-            initializer { FavoritesViewModel(container.repository, container.locationProvider) }
+            initializer { FavoritesViewModel(container.repository, container.locationResolver) }
         }
     }
 }

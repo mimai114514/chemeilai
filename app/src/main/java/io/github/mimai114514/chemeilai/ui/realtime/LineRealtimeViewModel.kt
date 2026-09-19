@@ -10,7 +10,7 @@ import io.github.mimai114514.chemeilai.data.model.Favorite
 import io.github.mimai114514.chemeilai.data.model.FavoriteType
 import io.github.mimai114514.chemeilai.data.model.Realtime
 import io.github.mimai114514.chemeilai.data.repository.CheLaileRepository
-import io.github.mimai114514.chemeilai.location.LocationProvider
+import io.github.mimai114514.chemeilai.location.LocationResolver
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,7 +32,7 @@ data class LineRealtimeUiState(
 /** 无站点上下文的线路实时页：换向、首末班、站序。 */
 class LineRealtimeViewModel(
     private val repository: CheLaileRepository,
-    private val locationProvider: LocationProvider,
+    private val locationResolver: LocationResolver,
     private val cityId: String?,
     private val lineName: String,
     private val initialDirection: Int?,
@@ -48,7 +48,7 @@ class LineRealtimeViewModel(
     fun load() {
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
-            val location = locationProvider.lastKnown()
+            val location = locationResolver.lastKnown()
             val directions = runCatching { repository.lineDirections(lineName) }.getOrNull().orEmpty()
             val selected = directions.firstOrNull { it.direction == initialDirection }
                 ?: directions.firstOrNull()
@@ -72,7 +72,7 @@ class LineRealtimeViewModel(
         if (direction == _state.value.selectedDirection) return
         viewModelScope.launch {
             _state.update { it.copy(selectedDirection = direction, loading = true, error = null) }
-            val location = locationProvider.lastKnown()
+            val location = locationResolver.lastKnown()
             fetch(direction, location?.latitude, location?.longitude)
         }
     }
@@ -129,7 +129,7 @@ class LineRealtimeViewModel(
             initializer {
                 LineRealtimeViewModel(
                     repository = container.repository,
-                    locationProvider = container.locationProvider,
+                    locationResolver = container.locationResolver,
                     cityId = cityId,
                     lineName = lineName,
                     initialDirection = direction,

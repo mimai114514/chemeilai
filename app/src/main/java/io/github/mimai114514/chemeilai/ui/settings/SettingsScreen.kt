@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LocationCity
+import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -60,7 +61,7 @@ private const val GITHUB_URL = "https://github.com/mimai114514/chemeilai"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onPickCity: () -> Unit) {
+fun SettingsScreen(onPickCity: () -> Unit, onMockLocationClick: () -> Unit) {
     val container = rememberAppContainer()
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(container))
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -100,6 +101,12 @@ fun SettingsScreen(onPickCity: () -> Unit) {
                     },
                     onClick = { showStartPicker = true },
                 )
+                SettingsRow(
+                    icon = Icons.Outlined.MyLocation,
+                    title = "模拟定位",
+                    subtitle = "保存/导入坐标，或按时间自动切换",
+                    onClick = onMockLocationClick,
+                )
             }
 
             SettingsGroup(title = "关于") {
@@ -125,62 +132,6 @@ fun SettingsScreen(onPickCity: () -> Unit) {
                 showStartPicker = false
             },
             onDismiss = { showStartPicker = false },
-        )
-    }
-}
-
-@Composable
-private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 4.dp),
-            )
-            Column(content = content)
-        }
-    }
-}
-
-@Composable
-private fun SettingsRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-        )
-        Spacer(Modifier.width(18.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

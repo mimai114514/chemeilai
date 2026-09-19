@@ -8,7 +8,7 @@ import io.github.mimai114514.chemeilai.AppContainer
 import io.github.mimai114514.chemeilai.data.model.NearbyStop
 import io.github.mimai114514.chemeilai.data.model.applyFavorites
 import io.github.mimai114514.chemeilai.data.repository.CheLaileRepository
-import io.github.mimai114514.chemeilai.location.LocationProvider
+import io.github.mimai114514.chemeilai.location.LocationResolver
 import io.github.mimai114514.chemeilai.location.LocationResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,7 +30,7 @@ data class NearbyUiState(
 
 class NearbyViewModel(
     private val repository: CheLaileRepository,
-    private val locationProvider: LocationProvider,
+    private val locationResolver: LocationResolver,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(NearbyUiState())
@@ -82,14 +82,14 @@ class NearbyViewModel(
                 return@launch
             }
 
-            if (!locationProvider.hasPermission()) {
+            if (!locationResolver.hasPermission()) {
                 _state.update {
                     it.copy(loading = false, refreshing = false, manualCity = false, permissionRequired = true)
                 }
                 return@launch
             }
 
-            when (val result = locationProvider.currentLocation()) {
+            when (val result = locationResolver.currentLocation()) {
                 LocationResult.PermissionMissing ->
                     _state.update {
                         it.copy(loading = false, refreshing = false, permissionRequired = true)
@@ -145,7 +145,7 @@ class NearbyViewModel(
 
     companion object {
         fun factory(container: AppContainer) = viewModelFactory {
-            initializer { NearbyViewModel(container.repository, container.locationProvider) }
+            initializer { NearbyViewModel(container.repository, container.locationResolver) }
         }
     }
 }

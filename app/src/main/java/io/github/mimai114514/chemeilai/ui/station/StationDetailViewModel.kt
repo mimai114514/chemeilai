@@ -10,7 +10,7 @@ import io.github.mimai114514.chemeilai.data.model.FavoriteType
 import io.github.mimai114514.chemeilai.data.model.StationLineGroup
 import io.github.mimai114514.chemeilai.data.model.applyFavorites
 import io.github.mimai114514.chemeilai.data.repository.CheLaileRepository
-import io.github.mimai114514.chemeilai.location.LocationProvider
+import io.github.mimai114514.chemeilai.location.LocationResolver
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,7 +31,7 @@ data class StationDetailUiState(
 
 class StationDetailViewModel(
     private val repository: CheLaileRepository,
-    private val locationProvider: LocationProvider,
+    private val locationResolver: LocationResolver,
     private val stationId: String,
     initialName: String,
     initialDirection: Int? = null,
@@ -67,7 +67,7 @@ class StationDetailViewModel(
         viewModelScope.launch {
             val hasContent = _state.value.lines.isNotEmpty()
             _state.update { it.copy(loading = !hasContent, refreshing = hasContent, error = null) }
-            val location = locationProvider.lastKnown()
+            val location = locationResolver.lastKnown()
             runCatching {
                 repository.stationDetail(
                     stationId = stationId,
@@ -138,7 +138,7 @@ class StationDetailViewModel(
             initializer {
                 StationDetailViewModel(
                     repository = container.repository,
-                    locationProvider = container.locationProvider,
+                    locationResolver = container.locationResolver,
                     stationId = stationId,
                     initialName = stationName,
                     initialDirection = initialDirection,
