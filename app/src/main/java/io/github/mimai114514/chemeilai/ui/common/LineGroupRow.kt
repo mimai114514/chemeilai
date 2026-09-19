@@ -103,7 +103,7 @@ private fun shortStationName(name: String?): String? {
 
 private const val MAX_STATION_CHARS = 6
 
-/** 车辆信息区：有 ETA 时显示分钟数（必要时前置状态），没有 ETA 时显示状态文案。 */
+/** 车辆信息区：有实时时整行同字号显示（如「5分钟 · 3站」），否则显示状态文案或发车时刻。 */
 @Composable
 private fun VehicleInfo(etaText: String?, status: String?) {
     val minutes = parseEtaMinutes(etaText)
@@ -121,7 +121,17 @@ private fun VehicleInfo(etaText: String?, status: String?) {
             Spacer(Modifier.width(8.dp))
         }
         when {
-            minutes != null -> EtaBadge(etaText)
+            minutes != null -> Text(
+                text = etaText.orEmpty(),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 168.dp),
+            )
+
             status != null -> Text(
                 text = status,
                 style = MaterialTheme.typography.labelMedium,
@@ -246,32 +256,3 @@ fun LineBadge(text: String, isFavorite: Boolean = false) {
 
 private val MIN_BADGE_WIDTH = 52.dp
 private val MAX_BADGE_WIDTH = 104.dp
-
-@Composable
-fun EtaBadge(etaText: String?) {
-    val minutes = parseEtaMinutes(etaText)
-    Column(horizontalAlignment = Alignment.End) {
-        if (minutes != null) {
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    text = minutes.toString(),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Text(
-                    text = parseEtaUnit(etaText).ifBlank { "分钟" },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 2.dp, bottom = 3.dp),
-                )
-            }
-        } else {
-            Text(
-                text = etaText ?: "—",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}

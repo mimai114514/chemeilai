@@ -28,8 +28,10 @@ class RealtimeViewModel(
     private val locationResolver: LocationResolver,
     private val stationId: String,
     private val lineNo: String,
-    private val direction: Int,
+    initialDirection: Int,
 ) : ViewModel() {
+
+    private var direction: Int = initialDirection
 
     private val _state = MutableStateFlow(RealtimeUiState())
     val state: StateFlow<RealtimeUiState> = _state.asStateFlow()
@@ -38,9 +40,17 @@ class RealtimeViewModel(
         load()
     }
 
+    /** 换向：切到本站台同一条线路的另一方向。 */
+    fun switchDirection() {
+        val other = _state.value.realtime?.otherDirection ?: return
+        if (other == direction) return
+        direction = other
+        load()
+    }
+
     fun load() {
         viewModelScope.launch {
-            _state.update { it.copy(loading = true, error = null) }
+            _state.update { it.copy(loading = it.realtime == null, error = null) }
             val location = locationResolver.lastKnown()
             runCatching {
                 repository.realtime(
@@ -103,7 +113,7 @@ class RealtimeViewModel(
                     locationResolver = container.locationResolver,
                     stationId = stationId,
                     lineNo = lineNo,
-                    direction = direction,
+                    initialDirection = direction,
                 )
             }
         }

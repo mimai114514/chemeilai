@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.DirectionsBus
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -76,6 +77,20 @@ fun RealtimeScreen(
                 },
                 actions = {
                     if (state.realtime != null) {
+                        IconButton(
+                            onClick = viewModel::switchDirection,
+                            enabled = state.realtime?.otherDirection != null,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.SwapHoriz,
+                                contentDescription = "换向",
+                                tint = if (state.realtime?.otherDirection != null) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
                         IconButton(onClick = viewModel::toggleFavorite) {
                             Icon(
                                 imageVector = if (state.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,

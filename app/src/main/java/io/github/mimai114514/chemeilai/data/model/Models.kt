@@ -115,6 +115,8 @@ data class Realtime(
     val tip: String?,
     val buses: List<BusEta>,
     val stations: List<RouteStation>,
+    /** 同一线路在本站的反方向，可用于换向；没有对向时为 null。 */
+    val otherDirection: Int? = null,
 )
 
 data class BusEta(

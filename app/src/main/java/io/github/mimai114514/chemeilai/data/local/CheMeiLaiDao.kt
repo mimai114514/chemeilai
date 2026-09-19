@@ -30,6 +30,9 @@ interface CheMeiLaiDao {
     @Query("SELECT * FROM line_locators WHERE stationId = :stationId AND lineNo = :lineNo AND direction = :direction LIMIT 1")
     suspend fun locator(stationId: String, lineNo: String, direction: Int): LineLocatorEntity?
 
+    @Query("SELECT * FROM line_locators WHERE stationId = :stationId AND lineNo = :lineNo")
+    suspend fun locators(stationId: String, lineNo: String): List<LineLocatorEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertLocators(locators: List<LineLocatorEntity>)
 

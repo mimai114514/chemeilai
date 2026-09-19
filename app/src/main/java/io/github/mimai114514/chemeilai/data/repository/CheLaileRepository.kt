@@ -442,8 +442,8 @@ class CheLaileRepository(
     ): Realtime {
         tongdaCompany()?.let { company ->
             val detail = tongda.stationDetail(company, stationId, null, lat, lng, emptySet())
-            val line = detail.lines.firstOrNull { it.displayName == lineNo }
-                ?.directions?.firstOrNull { it.direction == direction }
+            val directions = detail.lines.firstOrNull { it.displayName == lineNo }?.directions.orEmpty()
+            val line = directions.firstOrNull { it.direction == direction }
                 ?: throw ApiException("找不到该线路在本站的定位信息")
             return tongda.realtime(
                 companyNo = company,
@@ -454,7 +454,7 @@ class CheLaileRepository(
                 lng = lng,
                 stationName = line.stationName,
                 targetOrder = line.targetOrder,
-            )
+            ).copy(otherDirection = directions.firstOrNull { it.direction != direction }?.direction)
         }
         val locator = locator(stationId, lineNo, direction)
             ?: run {
@@ -507,6 +507,7 @@ class CheLaileRepository(
                     lng = station.lng,
                 )
             },
+            otherDirection = otherDirection(stationId, lineNo, direction),
         )
     }
 
@@ -520,18 +521,25 @@ class CheLaileRepository(
             .toSet()
 
     private suspend fun locator(stationId: String, lineNo: String, direction: Int): LineLocator? =
-        dao.locator(stationId, lineNo, direction)?.let { entity ->
-            LineLocator(
-                stationId = entity.stationId,
-                lineNo = entity.lineNo,
-                lineId = entity.lineId,
-                lineName = entity.lineName,
-                direction = entity.direction,
-                targetOrder = entity.targetOrder,
-                stationName = entity.stationName.orEmpty(),
-                nextStationName = entity.nextStationName.orEmpty(),
-            )
-        }
+        dao.locator(stationId, lineNo, direction)?.let { entity -> entity.toLocator() }
+
+    /** 同一条线路在本站的反方向，用于实时页换向。 */
+    private suspend fun otherDirection(stationId: String, lineNo: String, direction: Int): Int? =
+        dao.locators(stationId, lineNo)
+            .firstOrNull { it.direction != direction }
+            ?.direction
+
+    private fun LineLocatorEntity.toLocator(): LineLocator =
+        LineLocator(
+            stationId = stationId,
+            lineNo = lineNo,
+            lineId = lineId,
+            lineName = lineName,
+            direction = direction,
+            targetOrder = targetOrder,
+            stationName = stationName.orEmpty(),
+            nextStationName = nextStationName.orEmpty(),
+        )
 
     private suspend fun cacheStations(cityId: String, stops: List<NearbyStop>) {
         if (stops.isEmpty()) return

@@ -20,6 +20,4 @@ fun parseEtaMinutes(text: String?): Int? {
     return ETA_MINUTES_REGEX.find(value)?.groupValues?.get(1)?.toIntOrNull()
 }
 
-fun parseEtaUnit(text: String?): String = text?.dropWhile { it.isDigit() }?.trim().orEmpty()
-
 fun formatDistance(meters: Int?): String? = meters?.let { "$it 米" }
