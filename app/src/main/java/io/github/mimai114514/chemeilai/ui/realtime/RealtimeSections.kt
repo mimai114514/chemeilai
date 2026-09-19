@@ -46,9 +46,11 @@ fun RealtimeBusCard(
     targetLabel: String = "本站",
     showDistance: Boolean = true,
 ) {
-    val passed = targetOrder != null &&
-        bus.order != null &&
-        bus.order < targetOrder
+    val passed = if (targetOrder != null && bus.stationsAway != null) {
+        bus.stationsAway < 0
+    } else {
+        targetOrder != null && bus.order != null && bus.order < targetOrder
+    }
     val accent = if (passed) {
         MaterialTheme.colorScheme.onSurfaceVariant
     } else {
@@ -83,6 +85,7 @@ fun RealtimeBusCard(
                 )
                 val details = buildList {
                     if (!passed && showDistance) bus.distanceMeters?.let { add("距$targetLabel $it 米") }
+                    if (!passed) bus.stationName?.takeIf { it.isNotBlank() }?.let { add("停靠 $it") }
                     if (!passed) bus.timeStr?.takeIf { it.isNotBlank() }?.let { add("预计 $it") }
                 }
                 if (details.isNotEmpty()) {
@@ -116,6 +119,15 @@ fun RealtimeBusCard(
 }
 
 private fun busLabel(bus: BusEta, targetOrder: Int?, targetLabel: String): String {
+    // 通卡数据源直接给「还剩几站」，比拿两个站序相减可靠
+    bus.stationsAway?.let { away ->
+        return when {
+            targetOrder == null && away <= 0 -> "已到站"
+            away <= 0 -> "已到$targetLabel"
+            away == 1 -> "即将到站"
+            else -> "还有 $away 站"
+        }
+    }
     val order = bus.order ?: return "车辆"
     if (targetOrder == null) return "行驶至第 $order 站"
     val diff = order - targetOrder

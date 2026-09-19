@@ -132,6 +132,16 @@ private fun VehicleInfo(etaText: String?, status: String?) {
                 modifier = Modifier.widthIn(max = 116.dp),
             )
 
+            etaText != null -> Text(
+                text = etaText,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 116.dp),
+            )
+
             else -> Text(
                 text = "—",
                 style = MaterialTheme.typography.labelLarge,

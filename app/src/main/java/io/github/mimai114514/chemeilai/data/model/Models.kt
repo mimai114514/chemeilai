@@ -118,6 +118,10 @@ data class BusEta(
     val etaMinutes: Int?,
     val timeStr: String?,
     val state: Int?,
+    /** 距离目标站还剩几站（0 = 已到本站，1 = 即将到站）；仅通卡数据源提供。 */
+    val stationsAway: Int? = null,
+    /** 车辆当前所在站点名；仅通卡数据源提供。 */
+    val stationName: String? = null,
 )
 
 data class RouteStation(
@@ -176,6 +180,8 @@ data class NearestStation(
     val stationId: String,
     val stationName: String,
     val distanceMeters: Int,
+    val lat: Double? = null,
+    val lng: Double? = null,
 ) {
     val directionLabel: String? get() = listOfNotNull(startName, endName).joinToString(" → ").ifBlank { null }
 }

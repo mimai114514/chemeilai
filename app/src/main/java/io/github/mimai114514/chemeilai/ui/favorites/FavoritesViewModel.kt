@@ -93,12 +93,21 @@ class FavoritesViewModel(
         if (showLoading) _state.update { it.copy(loading = true) }
         val stationFavorites = favorites.filter { it.type == FavoriteType.STATION }
         val lineFavorites = favorites.filter { it.type == FavoriteType.LINE }
-        // 先把收藏条目本身渲染出来，定位与实时数据后到再补，避免整页等定位
-        _state.update {
-            it.copy(
+        // 先把收藏条目本身渲染出来，定位与实时数据后到再补，避免整页等定位。
+        // 复用上一轮已解析到的内容（按 id 匹配），刷新时不会退回只剩站点名的空卡片。
+        _state.update { current ->
+            val previousStations = current.stations.associateBy { it.id }
+            val previousLines = current.lines.associateBy { it.favorite.id }
+            current.copy(
                 loading = false,
-                stations = stationFavorites.map { favorite -> FavoriteStationStatus(favorite) },
-                lines = lineFavorites.map { favorite -> FavoriteLineStatus(favorite) },
+                stations = stationFavorites.map { favorite ->
+                    previousStations[favorite.id]?.copy(favorite = favorite)
+                        ?: FavoriteStationStatus(favorite)
+                },
+                lines = lineFavorites.map { favorite ->
+                    previousLines[favorite.id]?.copy(favorite = favorite)
+                        ?: FavoriteLineStatus(favorite)
+                },
             )
         }
         val cached = locationResolver.lastKnown()

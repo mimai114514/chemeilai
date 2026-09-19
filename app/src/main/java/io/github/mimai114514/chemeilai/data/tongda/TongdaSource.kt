@@ -92,9 +92,16 @@ class TongdaSource(private val api: TongdaApi) {
         val useLat = siteLat ?: bLat
         val useLng = siteLng ?: bLng
         val directions = if (useLat != null && useLng != null) {
-            loadRoadSites(companyNo, useLat, useLng)
+            val raw = loadRoadSites(companyNo, useLat, useLng)
                 .filter { it.stationname == name }
                 .mapNotNull { it.toLineDirection() }
+            // 同名站台（马路两侧）共用一个站点编号，getLocalRoadSite 会把双向都返回，
+            // 用站序接口里各方向的站台坐标剔除对向，避免「方向反了」
+            if (siteLat != null && siteLng != null) {
+                filterByPlatform(companyNo, raw, siteLat, siteLng)
+            } else {
+                raw
+            }
         } else {
             emptyList()
         }
@@ -163,33 +170,16 @@ class TongdaSource(private val api: TongdaApi) {
         }.getOrNull() ?: return direction
         val bus = busList(info, direction.direction).firstOrNull() ?: return direction
         val minutes = bus.etaMinutes ?: return direction
-        val stationOrder = stationOrder(companyNo, direction.lineId, direction.direction, direction.stationName)
-        val busOrder = bus.order
-        val remaining = if (stationOrder != null && busOrder != null && stationOrder > busOrder) {
-            stationOrder - busOrder
-        } else {
-            null
+        val suffix = when {
+            bus.stationsAway == null -> null
+            bus.stationsAway <= 0 -> "已到本站"
+            bus.stationsAway == 1 -> "即将到站"
+            else -> "${bus.stationsAway}站"
         }
         return direction.copy(
             etaMinutes = minutes,
-            etaText = if (remaining != null) "${minutes}分钟 · ${remaining}站" else "${minutes}分钟",
+            etaText = if (suffix == null) "${minutes}分钟" else "${minutes}分钟 · $suffix",
         )
-    }
-
-    private suspend fun stationOrder(
-        companyNo: String,
-        roadId: String,
-        direction: Int,
-        stationName: String?,
-    ): Int? {
-        if (stationName.isNullOrBlank()) return null
-        val lineInfo = roadState(companyNo, roadId)
-            .firstOrNull { it.roadstatus?.toIntOrNull() == direction }
-            ?: return null
-        return lineInfo.busstation
-            ?.firstOrNull { it.stationname == stationName }
-            ?.stationno
-            ?.toIntOrNull()
     }
 
     private suspend fun roadState(companyNo: String, roadId: String): List<TongdaLineInfo> {
@@ -199,6 +189,57 @@ class TongdaSource(private val api: TongdaApi) {
         }.getOrDefault(emptyList())
         if (lines.isNotEmpty()) roadStateCache[roadId] = lines
         return lines
+    }
+
+    /** 站序接口里某个方向在该站台上的那条记录（坐标是马路两侧区分方向的依据）。 */
+    private suspend fun routeStation(
+        companyNo: String,
+        roadId: String,
+        direction: Int,
+        stationName: String?,
+    ): TongdaBusStation? {
+        if (stationName.isNullOrBlank()) return null
+        val lineInfo = roadState(companyNo, roadId)
+            .firstOrNull { it.roadstatus?.toIntOrNull() == direction }
+            ?: return null
+        return lineInfo.busstation?.firstOrNull { it.stationname == stationName }
+    }
+
+    /**
+     * 每条线路只保留停在这个站台上的方向：同名站台两个方向共用一个站点编号，
+     * 只能靠站序里该站的坐标区分；拿不到坐标时保持原样，宁可多显示也不要漏线路。
+     */
+    private suspend fun filterByPlatform(
+        companyNo: String,
+        directions: List<LineDirection>,
+        stationLat: Double,
+        stationLng: Double,
+    ): List<LineDirection> = coroutineScope {
+        val semaphore = Semaphore(ENRICH_CONCURRENCY)
+        directions.groupBy { it.lineId }.values.map { sameLine ->
+            async {
+                val scored = sameLine.map { direction ->
+                    val station = semaphore.withPermit {
+                        routeStation(companyNo, direction.lineId, direction.direction, direction.stationName)
+                    }
+                    val sLat = station?.lat?.toDoubleOrNull()
+                    val sLng = station?.lng?.toDoubleOrNull()
+                    val distance = if (sLat != null && sLng != null) {
+                        metersBetween(stationLat, stationLng, sLat, sLng)
+                    } else {
+                        null
+                    }
+                    direction to distance
+                }
+                val nearest = scored.filter { it.second != null }
+                    .minByOrNull { it.second ?: Double.MAX_VALUE }
+                when {
+                    nearest == null -> sameLine
+                    (nearest.second ?: Double.MAX_VALUE) <= PLATFORM_RADIUS_METERS -> listOf(nearest.first)
+                    else -> sameLine
+                }
+            }
+        }.awaitAll().flatten()
     }
 
     suspend fun search(
@@ -299,12 +340,16 @@ class TongdaSource(private val api: TongdaApi) {
             ?: stateResult.getOrNull()?.firstOrNull()
         val stations = lineInfo?.busstation.orEmpty().mapNotNull { it.toRouteStation() }
         // getLocalRoadSite 的 stationno 是站点编号，站序里的 stationno 才是序号，用站名反查
-        val resolvedTargetOrder = stationName
+        val targetStation = stationName
             ?.takeIf { it.isNotBlank() }
-            ?.let { name -> lineInfo?.busstation?.firstOrNull { it.stationname == name }?.stationno?.toIntOrNull() }
-            ?: targetOrder
-        val buses = if (bLat != null && bLng != null) {
-            runCatching { api.getBusInfo(busInfoParams(roadId, companyNo, bLat, bLng)).data }.getOrNull()
+            ?.let { name -> lineInfo?.busstation?.firstOrNull { it.stationname == name } }
+        val resolvedTargetOrder = targetStation?.stationno?.toIntOrNull() ?: targetOrder
+        // getBusInfo 的 stationNum 是相对查询点算的，必须用目标站坐标提问，否则「还剩几站」对不上
+        val queryLat = targetStation?.lat?.toDoubleOrNull() ?: bLat
+        val queryLng = targetStation?.lng?.toDoubleOrNull() ?: bLng
+        val buses = if (queryLat != null && queryLng != null) {
+            runCatching { api.getBusInfo(busInfoParams(roadId, companyNo, queryLat, queryLng)).data }
+                .getOrNull()
                 ?.let { info -> busList(info, direction) }
                 .orEmpty()
         } else {
@@ -377,6 +422,8 @@ class TongdaSource(private val api: TongdaApi) {
                 stationId = nearest.second,
                 stationName = nearest.first.stationname.orEmpty(),
                 distanceMeters = nearest.third.toInt(),
+                lat = nearest.first.lat?.toDoubleOrNull(),
+                lng = nearest.first.lng?.toDoubleOrNull(),
             )
         }
     }
@@ -387,8 +434,14 @@ class TongdaSource(private val api: TongdaApi) {
         lat: Double?,
         lng: Double?,
     ): LineArrival? {
-        if (lat == null || lng == null) return null
-        val (bLat, bLng) = ChinaCoordinates.wgs84ToBd09(lat, lng)
+        // 通卡站序接口返回的站台坐标已是 BD-09；用它提问，stationNum 才是相对这个站台的
+        val stationLat = nearest.lat
+        val stationLng = nearest.lng
+        val (bLat, bLng) = when {
+            stationLat != null && stationLng != null -> stationLat to stationLng
+            lat != null && lng != null -> ChinaCoordinates.wgs84ToBd09(lat, lng)
+            else -> return null
+        }
         val info = runCatching {
             api.getBusInfo(busInfoParams(nearest.lineId, companyNo, bLat, bLng)).data
         }.getOrNull() ?: return null
@@ -406,23 +459,33 @@ class TongdaSource(private val api: TongdaApi) {
         )
     }
 
+    /**
+     * nearlyBusInfo 的 stationNum 是「到查询点还剩几站 + 1」（查询点就是目标站时，
+     * 车已到站为 1），不是线路上的绝对站序；绝对站序在 allBusInfo 里（0-based）。
+     */
     private fun busList(info: TongdaBusInfo, direction: Int? = null): List<BusEta> {
         val all = info.nearlyBusInfo.orEmpty()
-        // nearlyBusInfo 会混入双向的车，按 roadStatus 过滤；过滤后为空则退回全量以免整行没数据
+        // nearlyBusInfo 会混入双向的车，按 roadStatus 过滤；方向未知的车保留，对向的车宁可不要
         val scoped = if (direction != null) {
-            all.filter { it.roadStatus?.toIntOrNull() == direction }.ifEmpty { all }
+            all.filter { it.roadStatus?.toIntOrNull() == direction }
+                .ifEmpty { all.filter { it.roadStatus?.toIntOrNull() == null } }
         } else {
             all
         }
+        val positions = info.allBusInfo.orEmpty().associateBy { it.busplate }
         return scoped
             .map { bus ->
+                val position = positions[bus.busPlate]
                 BusEta(
                     busId = bus.busPlate,
-                    order = bus.stationNum?.toDoubleOrNull()?.toInt(),
+                    order = position?.stationno?.toIntOrNull()?.plus(1),
                     distanceMeters = null,
                     etaMinutes = bus.estimateTime?.toDoubleOrNull()?.let { Math.round(it).toInt() },
                     timeStr = null,
-                    state = bus.roadStatus?.toIntOrNull(),
+                    state = position?.roadstatus?.toIntOrNull() ?: bus.roadStatus?.toIntOrNull(),
+                    stationsAway = bus.stationNum?.toDoubleOrNull()
+                        ?.let { Math.round(it).toInt() - 1 },
+                    stationName = position?.sitename,
                 )
             }
             .sortedBy { it.etaMinutes ?: Int.MAX_VALUE }
@@ -547,5 +610,8 @@ class TongdaSource(private val api: TongdaApi) {
         )
         private const val MAX_LINE_PAGES = 20
         private const val ENRICH_CONCURRENCY = 3
+
+        /** 站台坐标与站序里该方向坐标的最大偏差，超过则认为不是同一个站台。 */
+        private const val PLATFORM_RADIUS_METERS = 150.0
     }
 }
