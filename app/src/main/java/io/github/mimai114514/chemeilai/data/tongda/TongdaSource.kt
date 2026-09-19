@@ -45,8 +45,9 @@ class TongdaSource(private val api: TongdaApi) {
         favoriteLineNames: Set<String>,
         limit: Int = 8,
     ): Nearby {
+        val (bLat, bLng) = ChinaCoordinates.wgs84ToBd09(lat, lng)
         val sites = loadSites(companyNo)
-        val roads = loadRoadSites(companyNo, lat, lng)
+        val roads = loadRoadSites(companyNo, bLat, bLng)
         val byStation = roads.groupBy { it.stationname.orEmpty() }
         val stops = sites
             .mapNotNull { site ->
@@ -57,7 +58,7 @@ class TongdaSource(private val api: TongdaApi) {
                 NearbyStop(
                     sId = id,
                     name = name,
-                    distanceMeters = metersBetween(lat, lng, siteLat, siteLng).toInt(),
+                    distanceMeters = metersBetween(bLat, bLng, siteLat, siteLng).toInt(),
                     lat = siteLat,
                     lng = siteLng,
                     lines = byStation[name].orEmpty()
@@ -80,12 +81,15 @@ class TongdaSource(private val api: TongdaApi) {
         lng: Double?,
         favoriteLineNames: Set<String>,
     ): StationDetail {
+        val local = if (lat != null && lng != null) ChinaCoordinates.wgs84ToBd09(lat, lng) else null
+        val bLat = local?.first
+        val bLng = local?.second
         val site = loadSites(companyNo).firstOrNull { it.siteid == stationId }
         val siteLat = site?.lat?.toDoubleOrNull()
         val siteLng = site?.lng?.toDoubleOrNull()
         val name = site?.stationname ?: fallbackName ?: stationId
-        val useLat = siteLat ?: lat
-        val useLng = siteLng ?: lng
+        val useLat = siteLat ?: bLat
+        val useLng = siteLng ?: bLng
         val directions = if (useLat != null && useLng != null) {
             loadRoadSites(companyNo, useLat, useLng)
                 .filter { it.stationname == name }
@@ -93,8 +97,8 @@ class TongdaSource(private val api: TongdaApi) {
         } else {
             emptyList()
         }
-        val distance = if (lat != null && lng != null && siteLat != null && siteLng != null) {
-            metersBetween(lat, lng, siteLat, siteLng).toInt()
+        val distance = if (bLat != null && bLng != null && siteLat != null && siteLng != null) {
+            metersBetween(bLat, bLng, siteLat, siteLng).toInt()
         } else {
             null
         }
@@ -206,14 +210,17 @@ class TongdaSource(private val api: TongdaApi) {
     ): SearchResult {
         val key = keyword.trim()
         if (key.isEmpty()) return SearchResult(emptyList(), emptyList(), emptyList())
+        val local = if (lat != null && lng != null) ChinaCoordinates.wgs84ToBd09(lat, lng) else null
+        val bLat = local?.first
+        val bLng = local?.second
         val stations = loadSites(companyNo)
             .filter { it.stationname?.contains(key, ignoreCase = true) == true }
             .mapNotNull { site ->
                 val id = site.siteid ?: return@mapNotNull null
                 val siteLat = site.lat?.toDoubleOrNull()
                 val siteLng = site.lng?.toDoubleOrNull()
-                val distance = if (lat != null && lng != null && siteLat != null && siteLng != null) {
-                    metersBetween(lat, lng, siteLat, siteLng).toInt()
+                val distance = if (bLat != null && bLng != null && siteLat != null && siteLng != null) {
+                    metersBetween(bLat, bLng, siteLat, siteLng).toInt()
                 } else {
                     null
                 }
@@ -249,7 +256,8 @@ class TongdaSource(private val api: TongdaApi) {
         val site = loadSites(companyNo).firstOrNull { it.siteid == stationId } ?: return null
         val siteLat = site.lat?.toDoubleOrNull() ?: return null
         val siteLng = site.lng?.toDoubleOrNull() ?: return null
-        return metersBetween(lat, lng, siteLat, siteLng).toInt()
+        val (bLat, bLng) = ChinaCoordinates.wgs84ToBd09(lat, lng)
+        return metersBetween(bLat, bLng, siteLat, siteLng).toInt()
     }
 
     suspend fun lineDirections(companyNo: String, lineName: String): List<CityLine> {
@@ -282,7 +290,10 @@ class TongdaSource(private val api: TongdaApi) {
         stationName: String?,
         targetOrder: Int?,
     ): Realtime {
-        val roads = if (lat != null && lng != null) loadRoadSites(companyNo, lat, lng) else emptyList()
+        val local = if (lat != null && lng != null) ChinaCoordinates.wgs84ToBd09(lat, lng) else null
+        val bLat = local?.first
+        val bLng = local?.second
+        val roads = if (bLat != null && bLng != null) loadRoadSites(companyNo, bLat, bLng) else emptyList()
         val stateResult = runCatching { api.getRoadState(roadStateParams(roadId, companyNo)).lineinfos }
         val lineInfo = stateResult.getOrNull()
             ?.firstOrNull { it.roadstatus?.toIntOrNull() == direction }
@@ -293,8 +304,8 @@ class TongdaSource(private val api: TongdaApi) {
             ?.takeIf { it.isNotBlank() }
             ?.let { name -> lineInfo?.busstation?.firstOrNull { it.stationname == name }?.stationno?.toIntOrNull() }
             ?: targetOrder
-        val buses = if (lat != null && lng != null) {
-            runCatching { api.getBusInfo(busInfoParams(roadId, companyNo, lat, lng)).data }.getOrNull()
+        val buses = if (bLat != null && bLng != null) {
+            runCatching { api.getBusInfo(busInfoParams(roadId, companyNo, bLat, bLng)).data }.getOrNull()
                 ?.let { info -> busList(info) }
                 .orEmpty()
         } else {
@@ -342,6 +353,7 @@ class TongdaSource(private val api: TongdaApi) {
         lat: Double,
         lng: Double,
     ): List<NearestStation> {
+        val (bLat, bLng) = ChinaCoordinates.wgs84ToBd09(lat, lng)
         val directions = lineDirections(companyNo, lineName)
         return directions.mapNotNull { direction ->
             val stations = runCatching {
@@ -354,7 +366,7 @@ class TongdaSource(private val api: TongdaApi) {
                 val id = station.siteid?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
                 val stationLat = station.lat?.toDoubleOrNull() ?: return@mapNotNull null
                 val stationLng = station.lng?.toDoubleOrNull() ?: return@mapNotNull null
-                Triple(station, id, metersBetween(lat, lng, stationLat, stationLng))
+                Triple(station, id, metersBetween(bLat, bLng, stationLat, stationLng))
             }
             val nearest = scored.minByOrNull { it.third } ?: return@mapNotNull null
             NearestStation(
@@ -377,8 +389,9 @@ class TongdaSource(private val api: TongdaApi) {
         lng: Double?,
     ): LineArrival? {
         if (lat == null || lng == null) return null
+        val (bLat, bLng) = ChinaCoordinates.wgs84ToBd09(lat, lng)
         val info = runCatching {
-            api.getBusInfo(busInfoParams(nearest.lineId, companyNo, lat, lng)).data
+            api.getBusInfo(busInfoParams(nearest.lineId, companyNo, bLat, bLng)).data
         }.getOrNull() ?: return null
         val buses = busList(info)
         val best = buses.minByOrNull { it.etaMinutes ?: Int.MAX_VALUE }
