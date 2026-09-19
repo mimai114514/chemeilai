@@ -12,8 +12,7 @@ import io.github.mimai114514.chemeilai.data.model.NearestStation
 import io.github.mimai114514.chemeilai.data.model.StationLineGroup
 import io.github.mimai114514.chemeilai.data.repository.CheLaileRepository
 import io.github.mimai114514.chemeilai.location.LocationResolver
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
+import io.github.mimai114514.chemeilai.location.LocationResult
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -102,17 +101,41 @@ class FavoritesViewModel(
                 lines = lineFavorites.map { favorite -> FavoriteLineStatus(favorite) },
             )
         }
-        val location = locationResolver.lastKnown()
+        val cached = locationResolver.lastKnown()
         val reversed = _state.value.reversed
 
-        val stations = coroutineScope {
-            stationFavorites.map { favorite -> async { resolveStation(favorite, location) } }.awaitAll()
+        // 站点线路、实时数据都不依赖用户定位，先用（可能为空的）缓存定位立刻开跑，
+        // 每张卡片各自完成就上屏，避免最慢的一条拖住整页
+        coroutineScope {
+            stationFavorites.forEach { favorite -> launch { loadStation(favorite, cached) } }
+            lineFavorites.forEach { favorite -> launch { loadLine(favorite, cached, reversed) } }
         }
-        val lines = coroutineScope {
-            lineFavorites.map { favorite -> async { resolveLine(favorite, location, reversed) } }.awaitAll()
+        _state.update { it.copy(loading = false, refreshing = false) }
+
+        // 没有缓存定位时主动要一次定位，拿到后补齐距离与依赖定位的线路实时
+        if (cached != null) return
+        val fresh = locationResolver.currentLocation()
+        if (fresh !is LocationResult.Success) return
+        val location = fresh.location
+        val pendingStations = _state.value.stations.filter { it.distanceMeters == null }
+        val pendingLines = _state.value.lines.filter { !it.ready }
+        coroutineScope {
+            pendingStations.forEach { status -> launch { loadStation(status.favorite, location) } }
+            pendingLines.forEach { status -> launch { loadLine(status.favorite, location, reversed) } }
         }
-        _state.update {
-            it.copy(loading = false, refreshing = false, stations = stations, lines = lines)
+    }
+
+    private suspend fun loadStation(favorite: Favorite, location: Location?) {
+        val status = resolveStation(favorite, location)
+        _state.update { current ->
+            current.copy(stations = current.stations.map { if (it.id == favorite.id) status else it })
+        }
+    }
+
+    private suspend fun loadLine(favorite: Favorite, location: Location?, reversed: Boolean) {
+        val status = resolveLine(favorite, location, reversed)
+        _state.update { current ->
+            current.copy(lines = current.lines.map { if (it.favorite.id == favorite.id) status else it })
         }
     }
 
