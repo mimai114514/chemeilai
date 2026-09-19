@@ -293,6 +293,9 @@ class CheLaileRepository(
 
     /** 站点与用户的距离（仅当本地缓存过该站点坐标时可用）。 */
     suspend fun stationDistanceMeters(stationId: String, lat: Double, lng: Double): Int? {
+        tongdaCompany()?.let { company ->
+            return tongda.stationDistanceMeters(company, stationId, lat, lng)
+        }
         val station = dao.station(stationId) ?: return null
         val stationLat = station.lat ?: return null
         val stationLng = station.lng ?: return null

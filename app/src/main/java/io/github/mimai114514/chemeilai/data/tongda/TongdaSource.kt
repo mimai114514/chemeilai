@@ -17,6 +17,11 @@ import io.github.mimai114514.chemeilai.data.model.StationDetail
 import io.github.mimai114514.chemeilai.data.model.StationLineGroup
 import io.github.mimai114514.chemeilai.data.model.applyFavorites
 import io.github.mimai114514.chemeilai.data.model.toStationLineGroups
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.util.Calendar
 
 /**
@@ -28,6 +33,7 @@ class TongdaSource(private val api: TongdaApi) {
     private val siteCache = mutableMapOf<String, List<TongdaSite>>()
     private val lineCache = mutableMapOf<String, List<TongdaLineInfo>>()
     private val roadSiteCache = mutableMapOf<String, List<TongdaRoadSite>>()
+    private val roadStateCache = mutableMapOf<String, List<TongdaLineInfo>>()
 
     fun companyFor(cityId: String?): String? = cityId?.let { COMPANIES[it] }
 
@@ -62,7 +68,8 @@ class TongdaSource(private val api: TongdaApi) {
             }
             .sortedBy { it.distanceMeters ?: Int.MAX_VALUE }
             .take(limit)
-        return Nearby(city, stops)
+        val enriched = enrichStops(companyNo, stops)
+        return Nearby(city, enriched)
     }
 
     suspend fun stationDetail(
@@ -95,8 +102,100 @@ class TongdaSource(private val api: TongdaApi) {
             sId = stationId,
             name = name,
             distanceMeters = distance,
-            lines = directions.toStationLineGroups().applyFavorites(favoriteLineNames),
+            lines = enrichGroups(
+                companyNo = companyNo,
+                lat = useLat ?: 0.0,
+                lng = useLng ?: 0.0,
+                groups = directions.toStationLineGroups().applyFavorites(favoriteLineNames),
+            ),
         )
+    }
+
+    private suspend fun enrichStops(companyNo: String, stops: List<NearbyStop>): List<NearbyStop> =
+        coroutineScope {
+            val semaphore = Semaphore(ENRICH_CONCURRENCY)
+            stops.map { stop ->
+                async {
+                    val lat = stop.lat
+                    val lng = stop.lng
+                    if (lat == null || lng == null || stop.lines.isEmpty()) {
+                        stop
+                    } else {
+                        stop.copy(lines = enrichGroups(companyNo, lat, lng, stop.lines, semaphore))
+                    }
+                }
+            }.awaitAll()
+        }
+
+    private suspend fun enrichGroups(
+        companyNo: String,
+        lat: Double,
+        lng: Double,
+        groups: List<StationLineGroup>,
+        semaphore: Semaphore = Semaphore(ENRICH_CONCURRENCY),
+    ): List<StationLineGroup> = coroutineScope {
+        groups.map { group ->
+            async {
+                group.copy(
+                    directions = group.directions.map { direction ->
+                        semaphore.withPermit { enrichDirection(companyNo, direction, lat, lng) }
+                    },
+                )
+            }
+        }.awaitAll()
+    }
+
+    /** 用站点坐标查实时：最近的车的到达分钟数，以及距本站还有几站。 */
+    private suspend fun enrichDirection(
+        companyNo: String,
+        direction: LineDirection,
+        lat: Double,
+        lng: Double,
+    ): LineDirection {
+        if (lat == 0.0 && lng == 0.0) return direction
+        val info = runCatching {
+            api.getBusInfo(busInfoParams(direction.lineId, companyNo, lat, lng)).data
+        }.getOrNull() ?: return direction
+        val bus = info.nearlyBusInfo.orEmpty()
+            .minByOrNull { it.estimateTime?.toDoubleOrNull() ?: Double.MAX_VALUE }
+            ?: return direction
+        val minutes = bus.estimateTime?.toDoubleOrNull()?.let { Math.round(it).toInt() } ?: return direction
+        val stationOrder = stationOrder(companyNo, direction.lineId, direction.direction, direction.stationName)
+        val busOrder = bus.stationNum?.toIntOrNull()
+        val remaining = if (stationOrder != null && busOrder != null && stationOrder > busOrder) {
+            stationOrder - busOrder
+        } else {
+            null
+        }
+        return direction.copy(
+            etaMinutes = minutes,
+            etaText = if (remaining != null) "${minutes}分钟 · ${remaining}站" else "${minutes}分钟",
+        )
+    }
+
+    private suspend fun stationOrder(
+        companyNo: String,
+        roadId: String,
+        direction: Int,
+        stationName: String?,
+    ): Int? {
+        if (stationName.isNullOrBlank()) return null
+        val lineInfo = roadState(companyNo, roadId)
+            .firstOrNull { it.roadstatus?.toIntOrNull() == direction }
+            ?: return null
+        return lineInfo.busstation
+            ?.firstOrNull { it.stationname == stationName }
+            ?.stationno
+            ?.toIntOrNull()
+    }
+
+    private suspend fun roadState(companyNo: String, roadId: String): List<TongdaLineInfo> {
+        roadStateCache[roadId]?.let { return it }
+        val lines = runCatching {
+            api.getRoadState(roadStateParams(roadId, companyNo)).lineinfos
+        }.getOrDefault(emptyList())
+        if (lines.isNotEmpty()) roadStateCache[roadId] = lines
+        return lines
     }
 
     suspend fun search(
@@ -138,6 +237,19 @@ class TongdaSource(private val api: TongdaApi) {
             .distinctBy { it.lineId + "-" + it.direction }
             .take(10)
         return SearchResult(stations, lines, emptyList())
+    }
+
+    /** 站点与用户的距离（按通卡站点表计算）。 */
+    suspend fun stationDistanceMeters(
+        companyNo: String,
+        stationId: String,
+        lat: Double,
+        lng: Double,
+    ): Int? {
+        val site = loadSites(companyNo).firstOrNull { it.siteid == stationId } ?: return null
+        val siteLat = site.lat?.toDoubleOrNull() ?: return null
+        val siteLng = site.lng?.toDoubleOrNull() ?: return null
+        return metersBetween(lat, lng, siteLat, siteLng).toInt()
     }
 
     suspend fun lineDirections(companyNo: String, lineName: String): List<CityLine> {
@@ -414,5 +526,6 @@ class TongdaSource(private val api: TongdaApi) {
             "169" to "190918180642923",
         )
         private const val MAX_LINE_PAGES = 20
+        private const val ENRICH_CONCURRENCY = 3
     }
 }
