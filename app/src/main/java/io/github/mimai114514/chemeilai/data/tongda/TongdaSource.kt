@@ -96,9 +96,9 @@ class TongdaSource(private val api: TongdaApi) {
                 .filter { it.stationname == name }
                 .mapNotNull { it.toLineDirection() }
             // 同名站台（马路两侧）共用一个站点编号，getLocalRoadSite 会把双向都返回，
-            // 用站序接口里各方向的站台坐标剔除对向，避免「方向反了」
+            // 用站序接口里各方向的站台坐标标出本站台方向，换向时仍可查看对向
             if (siteLat != null && siteLng != null) {
-                filterByPlatform(companyNo, raw, siteLat, siteLng)
+                markPlatformDirections(companyNo, raw, siteLat, siteLng)
             } else {
                 raw
             }
@@ -206,10 +206,11 @@ class TongdaSource(private val api: TongdaApi) {
     }
 
     /**
-     * 每条线路只保留停在这个站台上的方向：同名站台两个方向共用一个站点编号，
-     * 只能靠站序里该站的坐标区分；拿不到坐标时保持原样，宁可多显示也不要漏线路。
+     * 标出每条线路里停在这个站台上的方向：同名站台两个方向共用一个站点编号，
+     * 只能靠站序里该站的坐标区分（两侧约差 50 米），站点页优先展示这个方向。
+     * 拿不到坐标时不做标记，宁可退回按 ETA 挑方向也不要漏线路。
      */
-    private suspend fun filterByPlatform(
+    private suspend fun markPlatformDirections(
         companyNo: String,
         directions: List<LineDirection>,
         stationLat: Double,
@@ -233,10 +234,16 @@ class TongdaSource(private val api: TongdaApi) {
                 }
                 val nearest = scored.filter { it.second != null }
                     .minByOrNull { it.second ?: Double.MAX_VALUE }
-                when {
-                    nearest == null -> sameLine
-                    (nearest.second ?: Double.MAX_VALUE) <= PLATFORM_RADIUS_METERS -> listOf(nearest.first)
-                    else -> sameLine
+                    ?: return@async sameLine
+                if ((nearest.second ?: Double.MAX_VALUE) > PLATFORM_RADIUS_METERS) return@async sameLine
+                sameLine.map { direction ->
+                    if (direction.lineId == nearest.first.lineId &&
+                        direction.direction == nearest.first.direction
+                    ) {
+                        direction.copy(platformMatch = true)
+                    } else {
+                        direction
+                    }
                 }
             }
         }.awaitAll().flatten()

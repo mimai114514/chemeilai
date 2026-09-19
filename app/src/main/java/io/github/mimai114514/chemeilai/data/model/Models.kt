@@ -52,6 +52,8 @@ data class LineDirection(
     val lastTime: String? = null,
     val price: String? = null,
     val summaryOverride: String? = null,
+    /** 该方向的车停在这个站台上（同名站台两侧共用一个站点编号，靠坐标区分），默认展示它。 */
+    val platformMatch: Boolean = false,
 )
 
 /** 同一线路在某个站/查询下的所有方向，按线路聚合后展示。 */
@@ -62,7 +64,9 @@ data class StationLineGroup(
     val isFavorite: Boolean = false,
 ) {
     fun defaultDirection(): LineDirection? =
-        directions.minByOrNull { it.etaMinutes ?: Int.MAX_VALUE } ?: directions.firstOrNull()
+        directions.firstOrNull { it.platformMatch }
+            ?: directions.minByOrNull { it.etaMinutes ?: Int.MAX_VALUE }
+            ?: directions.firstOrNull()
 }
 
 /** 按展示名聚合为线路分组（保持首次出现顺序）。 */
@@ -72,7 +76,9 @@ fun List<LineDirection>.toStationLineGroups(): List<StationLineGroup> =
             StationLineGroup(
                 key = name,
                 displayName = name,
-                directions = directions.sortedBy { it.direction },
+                directions = directions.sortedWith(
+                    compareByDescending<LineDirection> { it.platformMatch }.thenBy { it.direction },
+                ),
             )
         }
 
