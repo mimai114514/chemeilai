@@ -70,7 +70,9 @@ class TongdaSource(private val api: TongdaApi) {
             }
             .sortedBy { it.distanceMeters ?: Int.MAX_VALUE }
             .take(limit)
-        val enriched = enrichStops(companyNo, stops)
+        // 同名站台（马路两侧）会各自成一张卡片，按本站坐标标出各自的方向后再取实时
+        val located = markStopsPlatform(companyNo, stops)
+        val enriched = enrichStops(companyNo, located)
         return Nearby(city, enriched)
     }
 
@@ -121,6 +123,38 @@ class TongdaSource(private val api: TongdaApi) {
                 groups = directions.toStationLineGroups().applyFavorites(favoriteLineNames),
             ),
         )
+    }
+
+    /** 给每个站点的线路标出「停在这个站台上」的方向（同名站台两侧各标各的）。 */
+    private suspend fun markStopsPlatform(
+        companyNo: String,
+        stops: List<NearbyStop>,
+    ): List<NearbyStop> = coroutineScope {
+        stops.map { stop ->
+            async {
+                val lat = stop.lat
+                val lng = stop.lng
+                if (lat == null || lng == null || stop.lines.isEmpty()) {
+                    stop
+                } else {
+                    val marked = markPlatformDirections(
+                        companyNo = companyNo,
+                        directions = stop.lines.flatMap { it.directions },
+                        stationLat = lat,
+                        stationLng = lng,
+                    ).associateBy { it.lineId to it.direction }
+                    stop.copy(
+                        lines = stop.lines.map { group ->
+                            group.copy(
+                                directions = group.directions.map { direction ->
+                                    marked[direction.lineId to direction.direction] ?: direction
+                                },
+                            )
+                        },
+                    )
+                }
+            }
+        }.awaitAll()
     }
 
     private suspend fun enrichStops(companyNo: String, stops: List<NearbyStop>): List<NearbyStop> =
@@ -201,11 +235,11 @@ class TongdaSource(private val api: TongdaApi) {
         ?.busstation
         .orEmpty()
 
-    /** 某个方向在该站台上的记录坐标（用于投票）与沿站序行驶时在站内的走向。 */
+    /** 某个方向在该站台上的记录坐标，以及沿站序行驶时在站内的走向。 */
     private data class PlatformEvidence(
         val direction: LineDirection,
-        /** 记录坐标离本站台越近票越高（负距离累加）。 */
-        val vote: Double,
+        val lat: Double?,
+        val lng: Double?,
         val heading: Double?,
     )
 
@@ -215,8 +249,9 @@ class TongdaSource(private val api: TongdaApi) {
      * 同名站台两侧共用一个站点编号，通卡给的方向坐标并不可靠：以新兴为例，
      * 同样朝东的线路被分别标到了两个站台（49路 dir1 实车车头 110° 与其站序走向
      * 112° 一致，但记录坐标却在对向站台）。所以先用站序推出各方向在站内的走向，
-     * 按走向分成两组（互为对向），再用「记录坐标更靠近哪个站台」的总票数决定
-     * 本站台是哪一组；票差太小就不标记，退回按 ETA 挑方向。
+     * 按走向分成两组（互为对向），再取每组记录坐标的中心点（到组内其它点总距离
+     * 最小的那个，即多数线路标的坐标），本站坐标离哪个中心点更近就归哪一组；
+     * 两个中心点到本站的距离太接近就不标记，退回按 ETA 挑方向。
      */
     private suspend fun markPlatformDirections(
         companyNo: String,
@@ -230,43 +265,49 @@ class TongdaSource(private val api: TongdaApi) {
                 val stations = semaphore.withPermit {
                     routeStations(companyNo, direction.lineId, direction.direction)
                 }
-                platformEvidence(direction, stations, stationLat, stationLng)
+                platformEvidence(direction, stations)
             }
         }.awaitAll()
-        val located = evidence.filter { it.heading != null }
+        val located = evidence.filter { it.heading != null && it.lat != null && it.lng != null }
         val reference = located.firstOrNull()?.heading ?: return@coroutineScope directions
-        val groups = located.groupBy { if (headingDelta(it.heading!!, reference) <= 90.0) 0 else 1 }
+        val groups = located.groupBy { groupKey(it.heading!!, reference) }
         if (groups.size != 2) return@coroutineScope directions
-        val ranked = groups.entries
-            .map { (key, members) -> key to members.sumOf { it.vote } }
-            .sortedByDescending { it.second }
-        if (ranked[0].second - ranked[1].second < PLATFORM_VOTE_MARGIN) return@coroutineScope directions
-        val platformGroup = ranked[0].first
+        val first = medoid(groups.getValue(0)) ?: return@coroutineScope directions
+        val second = medoid(groups.getValue(1)) ?: return@coroutineScope directions
+        val toFirst = metersBetween(stationLat, stationLng, first.first, first.second)
+        val toSecond = metersBetween(stationLat, stationLng, second.first, second.second)
+        if (Math.abs(toFirst - toSecond) < PLATFORM_SIDE_MARGIN) return@coroutineScope directions
+        val platformGroup = if (toFirst < toSecond) 0 else 1
         directions.map { direction ->
             val item = located.firstOrNull {
                 it.direction.lineId == direction.lineId && it.direction.direction == direction.direction
             } ?: return@map direction
-            val group = if (headingDelta(item.heading!!, reference) <= 90.0) 0 else 1
-            if (group == platformGroup) direction.copy(platformMatch = true) else direction
+            if (groupKey(item.heading!!, reference) == platformGroup) {
+                direction.copy(platformMatch = true)
+            } else {
+                direction
+            }
+        }
+    }
+
+    /** 到组内其它点总距离最小者，相当于这一组多数线路标的站台坐标。 */
+    private fun medoid(members: List<PlatformEvidence>): Pair<Double, Double>? {
+        val coords = members.mapNotNull { item ->
+            val lat = item.lat ?: return@mapNotNull null
+            val lng = item.lng ?: return@mapNotNull null
+            lat to lng
+        }
+        return coords.minByOrNull { candidate ->
+            coords.sumOf { metersBetween(candidate.first, candidate.second, it.first, it.second) }
         }
     }
 
     private fun platformEvidence(
         direction: LineDirection,
         stations: List<TongdaBusStation>,
-        stationLat: Double,
-        stationLng: Double,
     ): PlatformEvidence {
         val index = stations.indexOfFirst { it.stationname == direction.stationName }
         val station = stations.getOrNull(index)
-        val sLat = station?.lat?.toDoubleOrNull()
-        val sLng = station?.lng?.toDoubleOrNull()
-        // 记录坐标离本站台越近，票数越高（取负距离，累加后越大越接近本站台）
-        val vote = if (sLat != null && sLng != null) {
-            -metersBetween(stationLat, stationLng, sLat, sLng)
-        } else {
-            0.0
-        }
         val prev = stations.getOrNull(index - 1)
         val next = stations.getOrNull(index + 1)
         val heading = when {
@@ -275,8 +316,16 @@ class TongdaSource(private val api: TongdaApi) {
             prev != null && next != null -> segmentHeading(prev, next)
             else -> null
         }
-        return PlatformEvidence(direction, vote, heading)
+        return PlatformEvidence(
+            direction = direction,
+            lat = station?.lat?.toDoubleOrNull(),
+            lng = station?.lng?.toDoubleOrNull(),
+            heading = heading,
+        )
     }
+
+    private fun groupKey(heading: Double, reference: Double): Int =
+        if (headingDelta(heading, reference) <= 90.0) 0 else 1
 
     private fun segmentHeading(from: TongdaBusStation, to: TongdaBusStation): Double? {
         val lat1 = from.lat?.toDoubleOrNull() ?: return null
@@ -670,7 +719,7 @@ class TongdaSource(private val api: TongdaApi) {
         private const val MAX_LINE_PAGES = 20
         private const val ENRICH_CONCURRENCY = 3
 
-        /** 判定站台归属时两组票数的最小差距，太接近就不标记，退回按 ETA 挑方向。 */
-        private const val PLATFORM_VOTE_MARGIN = 60.0
+        /** 两组方向的站台中心点到本站的距离差小于该值时不判定方向归属。 */
+        private const val PLATFORM_SIDE_MARGIN = 10.0
     }
 }
