@@ -12,7 +12,13 @@ fun rememberAppContainer(): AppContainer {
     return remember(context) { (context.applicationContext as CheMeiLaiApp).container }
 }
 
-fun parseEtaMinutes(text: String?): Int? = text?.takeWhile { it.isDigit() }?.toIntOrNull()
+/** 只有「N分钟…」才算到站分钟数；发车时刻（如 13:50）不应被当成分钟。 */
+private val ETA_MINUTES_REGEX = Regex("^(\\d+)分钟")
+
+fun parseEtaMinutes(text: String?): Int? {
+    val value = text?.trim().orEmpty()
+    return ETA_MINUTES_REGEX.find(value)?.groupValues?.get(1)?.toIntOrNull()
+}
 
 fun parseEtaUnit(text: String?): String = text?.dropWhile { it.isDigit() }?.trim().orEmpty()
 

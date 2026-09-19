@@ -46,9 +46,23 @@ fun RealtimeBusCard(
     targetLabel: String = "本站",
     showDistance: Boolean = true,
 ) {
+    val passed = targetOrder != null &&
+        bus.order != null &&
+        bus.order < targetOrder
+    val accent = if (passed) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        colors = CardDefaults.cardColors(
+            containerColor = if (passed) {
+                MaterialTheme.colorScheme.surfaceContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerLow
+            },
+        ),
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -57,7 +71,7 @@ fun RealtimeBusCard(
             Icon(
                 imageVector = Icons.Filled.DirectionsBus,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = accent,
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -65,10 +79,11 @@ fun RealtimeBusCard(
                     text = busLabel(bus, targetOrder, targetLabel),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium,
+                    color = if (passed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                 )
                 val details = buildList {
-                    if (showDistance) bus.distanceMeters?.let { add("距$targetLabel $it 米") }
-                    bus.timeStr?.takeIf { it.isNotBlank() }?.let { add("预计 $it") }
+                    if (!passed && showDistance) bus.distanceMeters?.let { add("距$targetLabel $it 米") }
+                    if (!passed) bus.timeStr?.takeIf { it.isNotBlank() }?.let { add("预计 $it") }
                 }
                 if (details.isNotEmpty()) {
                     Text(
@@ -78,20 +93,22 @@ fun RealtimeBusCard(
                     )
                 }
             }
-            bus.etaMinutes?.let { minutes ->
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = minutes.toString(),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        text = "分钟",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 2.dp, bottom = 3.dp),
-                    )
+            if (!passed) {
+                bus.etaMinutes?.let { minutes ->
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(
+                            text = minutes.toString(),
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = "分钟",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 2.dp, bottom = 3.dp),
+                        )
+                    }
                 }
             }
         }

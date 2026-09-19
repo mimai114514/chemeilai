@@ -48,6 +48,7 @@ class TongdaSource(private val api: TongdaApi) {
         val (bLat, bLng) = ChinaCoordinates.wgs84ToBd09(lat, lng)
         val sites = loadSites(companyNo)
         val roads = loadRoadSites(companyNo, bLat, bLng)
+        // 同名站台（可能相距几十米）共用同一批线路，实时数据在下游按各站坐标分别计算
         val byStation = roads.groupBy { it.stationname.orEmpty() }
         val stops = sites
             .mapNotNull { site ->
@@ -160,12 +161,10 @@ class TongdaSource(private val api: TongdaApi) {
         val info = runCatching {
             api.getBusInfo(busInfoParams(direction.lineId, companyNo, lat, lng)).data
         }.getOrNull() ?: return direction
-        val bus = info.nearlyBusInfo.orEmpty()
-            .minByOrNull { it.estimateTime?.toDoubleOrNull() ?: Double.MAX_VALUE }
-            ?: return direction
-        val minutes = bus.estimateTime?.toDoubleOrNull()?.let { Math.round(it).toInt() } ?: return direction
+        val bus = busList(info, direction.direction).firstOrNull() ?: return direction
+        val minutes = bus.etaMinutes ?: return direction
         val stationOrder = stationOrder(companyNo, direction.lineId, direction.direction, direction.stationName)
-        val busOrder = bus.stationNum?.toIntOrNull()
+        val busOrder = bus.order
         val remaining = if (stationOrder != null && busOrder != null && stationOrder > busOrder) {
             stationOrder - busOrder
         } else {
@@ -306,7 +305,7 @@ class TongdaSource(private val api: TongdaApi) {
             ?: targetOrder
         val buses = if (bLat != null && bLng != null) {
             runCatching { api.getBusInfo(busInfoParams(roadId, companyNo, bLat, bLng)).data }.getOrNull()
-                ?.let { info -> busList(info) }
+                ?.let { info -> busList(info, direction) }
                 .orEmpty()
         } else {
             emptyList()
@@ -393,7 +392,7 @@ class TongdaSource(private val api: TongdaApi) {
         val info = runCatching {
             api.getBusInfo(busInfoParams(nearest.lineId, companyNo, bLat, bLng)).data
         }.getOrNull() ?: return null
-        val buses = busList(info)
+        val buses = busList(info, nearest.direction)
         val best = buses.minByOrNull { it.etaMinutes ?: Int.MAX_VALUE }
         return LineArrival(
             stationId = nearest.stationId,
@@ -407,8 +406,15 @@ class TongdaSource(private val api: TongdaApi) {
         )
     }
 
-    private fun busList(info: TongdaBusInfo): List<BusEta> =
-        info.nearlyBusInfo.orEmpty()
+    private fun busList(info: TongdaBusInfo, direction: Int? = null): List<BusEta> {
+        val all = info.nearlyBusInfo.orEmpty()
+        // nearlyBusInfo 会混入双向的车，按 roadStatus 过滤；过滤后为空则退回全量以免整行没数据
+        val scoped = if (direction != null) {
+            all.filter { it.roadStatus?.toIntOrNull() == direction }.ifEmpty { all }
+        } else {
+            all
+        }
+        return scoped
             .map { bus ->
                 BusEta(
                     busId = bus.busPlate,
@@ -420,6 +426,7 @@ class TongdaSource(private val api: TongdaApi) {
                 )
             }
             .sortedBy { it.etaMinutes ?: Int.MAX_VALUE }
+    }
 
     private suspend fun loadSites(companyNo: String): List<TongdaSite> {
         siteCache[companyNo]?.let { return it }
@@ -482,7 +489,7 @@ class TongdaSource(private val api: TongdaApi) {
             targetOrder = stationno?.toIntOrNull() ?: 0,
             stationName = stationname.orEmpty(),
             nextStationName = "",
-            etaText = next,
+            etaText = next?.let { "${it} 发车" },
             etaMinutes = next?.let { minutesUntil(it) },
             desc = null,
             firstTime = firsttime,
