@@ -191,24 +191,32 @@ class TongdaSource(private val api: TongdaApi) {
         return lines
     }
 
-    /** 站序接口里某个方向在该站台上的那条记录（坐标是马路两侧区分方向的依据）。 */
-    private suspend fun routeStation(
+    /** 站序接口里某个方向的完整站序（站台坐标、前后站都从这里取）。 */
+    private suspend fun routeStations(
         companyNo: String,
         roadId: String,
         direction: Int,
-        stationName: String?,
-    ): TongdaBusStation? {
-        if (stationName.isNullOrBlank()) return null
-        val lineInfo = roadState(companyNo, roadId)
-            .firstOrNull { it.roadstatus?.toIntOrNull() == direction }
-            ?: return null
-        return lineInfo.busstation?.firstOrNull { it.stationname == stationName }
-    }
+    ): List<TongdaBusStation> = roadState(companyNo, roadId)
+        .firstOrNull { it.roadstatus?.toIntOrNull() == direction }
+        ?.busstation
+        .orEmpty()
+
+    /** 某个方向在该站台上的记录坐标（用于投票）与沿站序行驶时在站内的走向。 */
+    private data class PlatformEvidence(
+        val direction: LineDirection,
+        /** 记录坐标离本站台越近票越高（负距离累加）。 */
+        val vote: Double,
+        val heading: Double?,
+    )
 
     /**
-     * 标出每条线路里停在这个站台上的方向：同名站台两个方向共用一个站点编号，
-     * 只能靠站序里该站的坐标区分（两侧约差 50 米），站点页优先展示这个方向。
-     * 拿不到坐标时不做标记，宁可退回按 ETA 挑方向也不要漏线路。
+     * 标出每条线路里停在这个站台上的方向。
+     *
+     * 同名站台两侧共用一个站点编号，通卡给的方向坐标并不可靠：以新兴为例，
+     * 同样朝东的线路被分别标到了两个站台（49路 dir1 实车车头 110° 与其站序走向
+     * 112° 一致，但记录坐标却在对向站台）。所以先用站序推出各方向在站内的走向，
+     * 按走向分成两组（互为对向），再用「记录坐标更靠近哪个站台」的总票数决定
+     * 本站台是哪一组；票差太小就不标记，退回按 ETA 挑方向。
      */
     private suspend fun markPlatformDirections(
         companyNo: String,
@@ -217,36 +225,80 @@ class TongdaSource(private val api: TongdaApi) {
         stationLng: Double,
     ): List<LineDirection> = coroutineScope {
         val semaphore = Semaphore(ENRICH_CONCURRENCY)
-        directions.groupBy { it.lineId }.values.map { sameLine ->
+        val evidence = directions.map { direction ->
             async {
-                val scored = sameLine.map { direction ->
-                    val station = semaphore.withPermit {
-                        routeStation(companyNo, direction.lineId, direction.direction, direction.stationName)
-                    }
-                    val sLat = station?.lat?.toDoubleOrNull()
-                    val sLng = station?.lng?.toDoubleOrNull()
-                    val distance = if (sLat != null && sLng != null) {
-                        metersBetween(stationLat, stationLng, sLat, sLng)
-                    } else {
-                        null
-                    }
-                    direction to distance
+                val stations = semaphore.withPermit {
+                    routeStations(companyNo, direction.lineId, direction.direction)
                 }
-                val nearest = scored.filter { it.second != null }
-                    .minByOrNull { it.second ?: Double.MAX_VALUE }
-                    ?: return@async sameLine
-                if ((nearest.second ?: Double.MAX_VALUE) > PLATFORM_RADIUS_METERS) return@async sameLine
-                sameLine.map { direction ->
-                    if (direction.lineId == nearest.first.lineId &&
-                        direction.direction == nearest.first.direction
-                    ) {
-                        direction.copy(platformMatch = true)
-                    } else {
-                        direction
-                    }
-                }
+                platformEvidence(direction, stations, stationLat, stationLng)
             }
-        }.awaitAll().flatten()
+        }.awaitAll()
+        val located = evidence.filter { it.heading != null }
+        val reference = located.firstOrNull()?.heading ?: return@coroutineScope directions
+        val groups = located.groupBy { if (headingDelta(it.heading!!, reference) <= 90.0) 0 else 1 }
+        if (groups.size != 2) return@coroutineScope directions
+        val ranked = groups.entries
+            .map { (key, members) -> key to members.sumOf { it.vote } }
+            .sortedByDescending { it.second }
+        if (ranked[0].second - ranked[1].second < PLATFORM_VOTE_MARGIN) return@coroutineScope directions
+        val platformGroup = ranked[0].first
+        directions.map { direction ->
+            val item = located.firstOrNull {
+                it.direction.lineId == direction.lineId && it.direction.direction == direction.direction
+            } ?: return@map direction
+            val group = if (headingDelta(item.heading!!, reference) <= 90.0) 0 else 1
+            if (group == platformGroup) direction.copy(platformMatch = true) else direction
+        }
+    }
+
+    private fun platformEvidence(
+        direction: LineDirection,
+        stations: List<TongdaBusStation>,
+        stationLat: Double,
+        stationLng: Double,
+    ): PlatformEvidence {
+        val index = stations.indexOfFirst { it.stationname == direction.stationName }
+        val station = stations.getOrNull(index)
+        val sLat = station?.lat?.toDoubleOrNull()
+        val sLng = station?.lng?.toDoubleOrNull()
+        // 记录坐标离本站台越近，票数越高（取负距离，累加后越大越接近本站台）
+        val vote = if (sLat != null && sLng != null) {
+            -metersBetween(stationLat, stationLng, sLat, sLng)
+        } else {
+            0.0
+        }
+        val prev = stations.getOrNull(index - 1)
+        val next = stations.getOrNull(index + 1)
+        val heading = when {
+            index == 0 && next != null -> segmentHeading(stations[0], next)
+            index == stations.size - 1 && prev != null -> segmentHeading(prev, stations[index])
+            prev != null && next != null -> segmentHeading(prev, next)
+            else -> null
+        }
+        return PlatformEvidence(direction, vote, heading)
+    }
+
+    private fun segmentHeading(from: TongdaBusStation, to: TongdaBusStation): Double? {
+        val lat1 = from.lat?.toDoubleOrNull() ?: return null
+        val lng1 = from.lng?.toDoubleOrNull() ?: return null
+        val lat2 = to.lat?.toDoubleOrNull() ?: return null
+        val lng2 = to.lng?.toDoubleOrNull() ?: return null
+        return bearingBetween(lat1, lng1, lat2, lng2)
+    }
+
+    private fun bearingBetween(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
+        val p1 = Math.toRadians(lat1)
+        val p2 = Math.toRadians(lat2)
+        val dLng = Math.toRadians(lng2 - lng1)
+        val y = Math.sin(dLng) * Math.cos(p2)
+        val x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dLng)
+        val bearing = Math.toDegrees(Math.atan2(y, x))
+        return if (bearing < 0) bearing + 360 else bearing
+    }
+
+    private fun headingDelta(a: Double, b: Double): Double {
+        val diff = Math.abs(a - b) % 360
+        return if (diff > 180) 360 - diff else diff
     }
 
     suspend fun search(
@@ -618,7 +670,7 @@ class TongdaSource(private val api: TongdaApi) {
         private const val MAX_LINE_PAGES = 20
         private const val ENRICH_CONCURRENCY = 3
 
-        /** 站台坐标与站序里该方向坐标的最大偏差，超过则认为不是同一个站台。 */
-        private const val PLATFORM_RADIUS_METERS = 150.0
+        /** 判定站台归属时两组票数的最小差距，太接近就不标记，退回按 ETA 挑方向。 */
+        private const val PLATFORM_VOTE_MARGIN = 60.0
     }
 }
