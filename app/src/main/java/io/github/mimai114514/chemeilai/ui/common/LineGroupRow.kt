@@ -80,12 +80,15 @@ fun StationLineRow(
 }
 
 /** 开往（终点站）· 下一站 xx；两个站名各最多显示 6 个字。 */
-private fun directionSummary(direction: LineDirection): String = buildString {
-    append("开往 ")
-    append(shortStationName(direction.endName) ?: "终点站")
-    direction.nextStationName.takeIf { it.isNotBlank() }?.let {
-        append(" · 下一站 ")
-        append(shortStationName(it))
+private fun directionSummary(direction: LineDirection): String {
+    direction.summaryOverride?.takeIf { it.isNotBlank() }?.let { return it }
+    return buildString {
+        append("开往 ")
+        append(shortStationName(direction.endName) ?: "终点站")
+        direction.nextStationName.takeIf { it.isNotBlank() }?.let {
+            append(" · 下一站 ")
+            append(shortStationName(it))
+        }
     }
 }
 

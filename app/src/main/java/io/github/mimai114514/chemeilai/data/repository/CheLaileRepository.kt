@@ -47,6 +47,7 @@ import io.github.mimai114514.chemeilai.data.remote.StationDetailDto
 import io.github.mimai114514.chemeilai.data.remote.StationLineEntryDto
 import io.github.mimai114514.chemeilai.data.remote.StnStateDto
 import io.github.mimai114514.chemeilai.data.remote.requireData
+import io.github.mimai114514.chemeilai.data.tongda.TongdaSource
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -66,7 +67,10 @@ class CheLaileRepository(
     private val dao: CheMeiLaiDao,
     private val session: SessionStore,
     private val json: Json,
+    private val tongda: TongdaSource,
 ) {
+
+    private suspend fun tongdaCompany(): String? = tongda.companyFor(currentCity()?.cityId)
 
     suspend fun lastCity(): City? = dao.latestCity()?.let { City(it.cityId, it.cityName) }
 
@@ -131,6 +135,9 @@ class CheLaileRepository(
         if (trimmed.isEmpty()) {
             return SearchResult(emptyList(), emptyList(), emptyList())
         }
+        tongdaCompany()?.let { company ->
+            return tongda.search(company, trimmed, lat, lng)
+        }
         val dto: ClientSearchDto = plain(
             call = api::clientSearch,
             biz = mapOf("key" to trimmed, "count" to SEARCH_COUNT),
@@ -166,6 +173,10 @@ class CheLaileRepository(
     suspend fun lineDirections(lineName: String, lineNo: String? = null): List<CityLine> {
         val key = lineName.trim()
         if (key.isEmpty()) return emptyList()
+        tongdaCompany()?.let { company ->
+            val lines = tongda.lineDirections(company, key)
+            if (lines.isNotEmpty()) return lines
+        }
         val matches = cityLines().filter {
             it.displayName == key || it.lineNo == key || (lineNo != null && it.lineNo == lineNo)
         }
@@ -193,6 +204,10 @@ class CheLaileRepository(
 
     /** 该线路每个方向上离 (lat,lng) 最近的站台。 */
     suspend fun lineNearestStations(lineName: String, lat: Double, lng: Double): List<NearestStation> {
+        tongdaCompany()?.let { company ->
+            val nearest = tongda.lineNearestStations(company, lineName, lat, lng)
+            if (nearest.isNotEmpty()) return nearest
+        }
         val directions = lineDirections(lineName)
         return directions.mapNotNull { direction ->
             val stations = runCatching { lineRouteStations(direction.lineId, lat, lng) }.getOrNull().orEmpty()
@@ -223,6 +238,9 @@ class CheLaileRepository(
         lat: Double? = null,
         lng: Double? = null,
     ): LineArrival? {
+        tongdaCompany()?.let { company ->
+            return tongda.arrivalAt(company, nearest, lat, lng)
+        }
         val detail = runCatching { stationDetail(nearest.stationId, lat, lng) }.getOrNull()
         val rawLineNo = detail?.lines
             ?.firstOrNull { it.displayName == lineName }
@@ -252,6 +270,9 @@ class CheLaileRepository(
         lat: Double? = null,
         lng: Double? = null,
     ): Realtime? {
+        tongdaCompany()?.let { company ->
+            return tongda.lineRealtime(company, lineName, direction, lat, lng)
+        }
         val directions = lineDirections(lineName)
         val target = directions.firstOrNull { it.direction == direction }
             ?: directions.firstOrNull()
@@ -315,6 +336,9 @@ class CheLaileRepository(
 
     suspend fun nearby(lat: Double, lng: Double): Nearby {
         val city = resolveCity(lat, lng)
+        tongda.companyFor(city.cityId)?.let { company ->
+            return tongda.nearby(company, city, lat, lng, favoriteLineNames(city.cityId))
+        }
         val dto = encrypted<NearLinesDto>(
             call = api::encryptedNearLines,
             biz = listOf("cityState" to "2"),
@@ -356,6 +380,16 @@ class CheLaileRepository(
         lng: Double? = null,
         cityId: String? = null,
     ): StationDetail {
+        tongdaCompany()?.let { company ->
+            return tongda.stationDetail(
+                companyNo = company,
+                stationId = stationId,
+                fallbackName = dao.station(stationId)?.name,
+                lat = lat,
+                lng = lng,
+                favoriteLineNames = favoriteLineNames(currentCity()?.cityId),
+            )
+        }
         val geo = resolveGeo(stationId, lat, lng)
         val city = cityId ?: currentCity()?.cityId
         val dto = encrypted<StationDetailDto>(
@@ -403,6 +437,22 @@ class CheLaileRepository(
         lng: Double? = null,
         cityId: String? = null,
     ): Realtime {
+        tongdaCompany()?.let { company ->
+            val detail = tongda.stationDetail(company, stationId, null, lat, lng, emptySet())
+            val line = detail.lines.firstOrNull { it.displayName == lineNo }
+                ?.directions?.firstOrNull { it.direction == direction }
+                ?: throw ApiException("找不到该线路在本站的定位信息")
+            return tongda.realtime(
+                companyNo = company,
+                roadId = line.lineId,
+                lineNo = lineNo,
+                direction = direction,
+                lat = lat,
+                lng = lng,
+                stationName = line.stationName,
+                targetOrder = line.targetOrder,
+            )
+        }
         val locator = locator(stationId, lineNo, direction)
             ?: run {
                 stationDetail(stationId, lat, lng, cityId)

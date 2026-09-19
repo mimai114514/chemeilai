@@ -6,6 +6,8 @@ import io.github.mimai114514.chemeilai.data.local.CheMeiLaiDatabase
 import io.github.mimai114514.chemeilai.data.local.SessionStore
 import io.github.mimai114514.chemeilai.data.remote.CheLaileApiFactory
 import io.github.mimai114514.chemeilai.data.repository.CheLaileRepository
+import io.github.mimai114514.chemeilai.data.tongda.TongdaApiFactory
+import io.github.mimai114514.chemeilai.data.tongda.TongdaSource
 import io.github.mimai114514.chemeilai.location.LocationProvider
 import kotlinx.serialization.json.Json
 
@@ -36,5 +38,6 @@ class AppContainer(context: Context) {
         dao = CheMeiLaiDatabase.get(context).dao(),
         session = SessionStore(context),
         json = json,
+        tongda = TongdaSource(TongdaApiFactory.create(json)),
     )
 }

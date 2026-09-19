@@ -51,6 +51,7 @@ data class LineDirection(
     val firstTime: String? = null,
     val lastTime: String? = null,
     val price: String? = null,
+    val summaryOverride: String? = null,
 )
 
 /** 同一线路在某个站/查询下的所有方向，按线路聚合后展示。 */
@@ -63,6 +64,17 @@ data class StationLineGroup(
     fun defaultDirection(): LineDirection? =
         directions.minByOrNull { it.etaMinutes ?: Int.MAX_VALUE } ?: directions.firstOrNull()
 }
+
+/** 按展示名聚合为线路分组（保持首次出现顺序）。 */
+fun List<LineDirection>.toStationLineGroups(): List<StationLineGroup> =
+    groupBy { it.displayName }
+        .map { (name, directions) ->
+            StationLineGroup(
+                key = name,
+                displayName = name,
+                directions = directions.sortedBy { it.direction },
+            )
+        }
 
 /** 按收藏的线路名重算收藏标记，并把已收藏线路排到前面。 */
 fun List<StationLineGroup>.applyFavorites(favoriteLineNames: Set<String>): List<StationLineGroup> =

@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mimai114514.chemeilai.data.model.CityOption
+import io.github.mimai114514.chemeilai.data.model.RealtimeSupport
 import io.github.mimai114514.chemeilai.ui.common.rememberAppContainer
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -143,11 +144,33 @@ private fun CityRow(city: CityOption, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(text = city.name, style = MaterialTheme.typography.bodyLarge)
-        Text(
-            text = city.pinyin,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = city.name, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = city.pinyin,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        RealtimeTag(cityId = city.cityId)
     }
+}
+
+@Composable
+private fun RealtimeTag(cityId: String) {
+    val (label, color) = when {
+        cityId in RealtimeSupport.TONGDA ->
+            "实时" to MaterialTheme.colorScheme.primary
+
+        cityId in RealtimeSupport.CHELAILE_CHANNELS ->
+            "实时" to MaterialTheme.colorScheme.primary
+
+        else ->
+            "无实时" to MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelSmall,
+        color = color,
+    )
 }
