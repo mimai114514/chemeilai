@@ -1,5 +1,7 @@
 package io.github.mimai114514.chemeilai.data.tongda
 
+import io.github.mimai114514.chemeilai.data.local.CheMeiLaiDao
+import io.github.mimai114514.chemeilai.data.local.RoadStateEntity
 import io.github.mimai114514.chemeilai.data.model.BusEta
 import io.github.mimai114514.chemeilai.data.model.City
 import io.github.mimai114514.chemeilai.data.model.CityLine
@@ -22,13 +24,24 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.util.Calendar
 
 /**
  * 梧州（通卡/yourbus 平台）数据源。参数命名不统一：
  * 站点与线路接口用 companyNo / scontent，实时接口用 company / roadId，且 localtion 拼写如此。
+ *
+ * [dao] 不为空时，站序接口（getRoadState）的结果会落盘缓存 7 天：梧州没有车来了渠道，
+ * 站点页/附近页要靠站序判断站台方向、线路页要靠它定位最近站，而通卡平台限流（实测要
+ * 3 秒左右一次请求），落盘后每个线路一辈子只请求一次。
  */
-class TongdaSource(private val api: TongdaApi) {
+class TongdaSource(
+    private val api: TongdaApi,
+    private val dao: CheMeiLaiDao? = null,
+    private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true },
+) {
 
     private val siteCache = mutableMapOf<String, List<TongdaSite>>()
     private val lineCache = mutableMapOf<String, List<TongdaLineInfo>>()
@@ -239,11 +252,40 @@ class TongdaSource(private val api: TongdaApi) {
 
     private suspend fun roadState(companyNo: String, roadId: String): List<TongdaLineInfo> {
         roadStateCache[roadId]?.let { return it }
+        readStoredRoadState(roadId)?.let {
+            roadStateCache[roadId] = it
+            return it
+        }
         val lines = runCatching {
             api.getRoadState(roadStateParams(roadId, companyNo)).lineinfos
         }.getOrDefault(emptyList())
-        if (lines.isNotEmpty()) roadStateCache[roadId] = lines
+        if (lines.isNotEmpty()) {
+            roadStateCache[roadId] = lines
+            storeRoadState(roadId, lines)
+        }
         return lines
+    }
+
+    private suspend fun readStoredRoadState(roadId: String): List<TongdaLineInfo>? {
+        val dao = dao ?: return null
+        val row = runCatching { dao.roadState(roadId) }.getOrNull() ?: return null
+        if (System.currentTimeMillis() - row.updatedAt > ROAD_STATE_TTL_MILLIS) return null
+        return runCatching { json.decodeFromString<List<TongdaLineInfo>>(row.lineInfos) }
+            .getOrNull()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
+    private suspend fun storeRoadState(roadId: String, lines: List<TongdaLineInfo>) {
+        val dao = dao ?: return
+        runCatching {
+            dao.upsertRoadState(
+                RoadStateEntity(
+                    roadId = roadId,
+                    lineInfos = json.encodeToString(lines),
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+        }
     }
 
     /** 站序接口里某个方向的完整站序（站台坐标、前后站都从这里取）。 */
@@ -520,10 +562,9 @@ class TongdaSource(private val api: TongdaApi) {
         val bLat = local?.first
         val bLng = local?.second
         val roads = if (bLat != null && bLng != null) loadRoadSites(companyNo, bLat, bLng) else emptyList()
-        val stateResult = runCatching { api.getRoadState(roadStateParams(roadId, companyNo)).lineinfos }
-        val lineInfo = stateResult.getOrNull()
-            ?.firstOrNull { it.roadstatus?.toIntOrNull() == direction }
-            ?: stateResult.getOrNull()?.firstOrNull()
+        val lineInfos = roadState(companyNo, roadId)
+        val lineInfo = lineInfos.firstOrNull { it.roadstatus?.toIntOrNull() == direction }
+            ?: lineInfos.firstOrNull()
         val stations = lineInfo?.busstation.orEmpty().mapNotNull { it.toRouteStation() }
         // getLocalRoadSite 的 stationno 是站点编号，站序里的 stationno 才是序号，用站名反查
         val targetStation = stationName
@@ -586,10 +627,8 @@ class TongdaSource(private val api: TongdaApi) {
         val (bLat, bLng) = ChinaCoordinates.wgs84ToBd09(lat, lng)
         val directions = lineDirections(companyNo, lineName)
         return directions.mapNotNull { direction ->
-            val stations = runCatching {
-                api.getRoadState(roadStateParams(direction.lineId, companyNo)).lineinfos
-            }.getOrNull()
-                ?.firstOrNull { it.roadstatus?.toIntOrNull() == direction.direction }
+            val stations = roadState(companyNo, direction.lineId)
+                .firstOrNull { it.roadstatus?.toIntOrNull() == direction.direction }
                 ?.busstation
                 .orEmpty()
             val scored = stations.mapNotNull { station ->
@@ -802,5 +841,8 @@ class TongdaSource(private val api: TongdaApi) {
 
         /** 方向记录的站台坐标离同名站台小于该值时才当作「这条线路表态了站台」。 */
         private const val PLATFORM_ANCHOR_RADIUS = 60.0
+
+        /** 落盘的站序多少天后过期（站序与站台坐标很少变动）。 */
+        private const val ROAD_STATE_TTL_MILLIS = 7L * 24 * 60 * 60 * 1000
     }
 }

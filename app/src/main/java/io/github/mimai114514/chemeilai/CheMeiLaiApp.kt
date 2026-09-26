@@ -39,11 +39,13 @@ class AppContainer(context: Context) {
 
     val locationResolver: LocationResolver = LocationResolver(locationProvider, locationStore)
 
+    private val dao = CheMeiLaiDatabase.get(context).dao()
+
     val repository: CheLaileRepository = CheLaileRepository(
         api = CheLaileApiFactory.create(json),
-        dao = CheMeiLaiDatabase.get(context).dao(),
+        dao = dao,
         session = SessionStore(context),
         json = json,
-        tongda = TongdaSource(TongdaApiFactory.create(json)),
+        tongda = TongdaSource(TongdaApiFactory.create(json), dao = dao, json = json),
     )
 }

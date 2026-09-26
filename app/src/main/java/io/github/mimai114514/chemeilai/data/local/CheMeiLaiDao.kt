@@ -50,4 +50,10 @@ interface CheMeiLaiDao {
 
     @Query("DELETE FROM favorites WHERE id = :id")
     suspend fun deleteFavorite(id: String)
+
+    @Query("SELECT * FROM road_states WHERE roadId = :roadId LIMIT 1")
+    suspend fun roadState(roadId: String): RoadStateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertRoadState(state: RoadStateEntity)
 }

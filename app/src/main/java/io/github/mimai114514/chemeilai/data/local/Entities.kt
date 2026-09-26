@@ -52,3 +52,11 @@ data class FavoriteEntity(
     val cityId: String?,
     val createdAt: Long,
 )
+
+/** 通卡站序接口（getRoadState）的原始响应；站序与站台坐标几乎不变，落盘长期复用。 */
+@Entity(tableName = "road_states")
+data class RoadStateEntity(
+    @PrimaryKey val roadId: String,
+    val lineInfos: String,
+    val updatedAt: Long,
+)
