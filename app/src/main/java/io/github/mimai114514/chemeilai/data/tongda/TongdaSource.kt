@@ -50,6 +50,7 @@ class TongdaSource(private val api: TongdaApi) {
         val roads = loadRoadSites(companyNo, bLat, bLng)
         // 同名站台（可能相距几十米）共用同一批线路，实时数据在下游按各站坐标分别计算
         val byStation = roads.groupBy { it.stationname.orEmpty() }
+        val platforms = sameNamePlatforms(sites)
         val stops = sites
             .mapNotNull { site ->
                 val id = site.siteid?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
@@ -71,10 +72,21 @@ class TongdaSource(private val api: TongdaApi) {
             .sortedBy { it.distanceMeters ?: Int.MAX_VALUE }
             .take(limit)
         // 同名站台（马路两侧）会各自成一张卡片，按本站坐标标出各自的方向后再取实时
-        val located = markStopsPlatform(companyNo, stops)
+        val located = markStopsPlatform(companyNo, stops, platforms)
         val enriched = enrichStops(companyNo, located)
         return Nearby(city, enriched)
     }
+
+    /** 站点表里同名站点的各站台坐标（去重），供方向判定当锚点。 */
+    private fun sameNamePlatforms(sites: List<TongdaSite>): Map<String, List<Pair<Double, Double>>> =
+        sites.mapNotNull { site ->
+            val name = site.stationname?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val lat = site.lat?.toDoubleOrNull() ?: return@mapNotNull null
+            val lng = site.lng?.toDoubleOrNull() ?: return@mapNotNull null
+            name to (lat to lng)
+        }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, coords) -> coords.distinct() }
 
     suspend fun stationDetail(
         companyNo: String,
@@ -87,7 +99,8 @@ class TongdaSource(private val api: TongdaApi) {
         val local = if (lat != null && lng != null) ChinaCoordinates.wgs84ToBd09(lat, lng) else null
         val bLat = local?.first
         val bLng = local?.second
-        val site = loadSites(companyNo).firstOrNull { it.siteid == stationId }
+        val sites = loadSites(companyNo)
+        val site = sites.firstOrNull { it.siteid == stationId }
         val siteLat = site?.lat?.toDoubleOrNull()
         val siteLng = site?.lng?.toDoubleOrNull()
         val name = site?.stationname ?: fallbackName ?: stationId
@@ -100,7 +113,13 @@ class TongdaSource(private val api: TongdaApi) {
             // 同名站台（马路两侧）共用一个站点编号，getLocalRoadSite 会把双向都返回，
             // 用站序接口里各方向的站台坐标标出本站台方向，换向时仍可查看对向
             if (siteLat != null && siteLng != null) {
-                markPlatformDirections(companyNo, raw, siteLat, siteLng)
+                markPlatformDirections(
+                    companyNo = companyNo,
+                    directions = raw,
+                    stationLat = siteLat,
+                    stationLng = siteLng,
+                    platforms = sameNamePlatforms(sites)[name].orEmpty(),
+                )
             } else {
                 raw
             }
@@ -129,6 +148,7 @@ class TongdaSource(private val api: TongdaApi) {
     private suspend fun markStopsPlatform(
         companyNo: String,
         stops: List<NearbyStop>,
+        platforms: Map<String, List<Pair<Double, Double>>>,
     ): List<NearbyStop> = coroutineScope {
         stops.map { stop ->
             async {
@@ -142,6 +162,7 @@ class TongdaSource(private val api: TongdaApi) {
                         directions = stop.lines.flatMap { it.directions },
                         stationLat = lat,
                         stationLng = lng,
+                        platforms = platforms[stop.name].orEmpty(),
                     ).associateBy { it.lineId to it.direction }
                     stop.copy(
                         lines = stop.lines.map { group ->
@@ -251,13 +272,15 @@ class TongdaSource(private val api: TongdaApi) {
      * 112° 一致，但记录坐标却在对向站台）。所以先用站序推出各方向在站内的走向，
      * 按走向分成两组（互为对向），再取每组记录坐标的中心点（到组内其它点总距离
      * 最小的那个，即多数线路标的坐标），本站坐标离哪个中心点更近就归哪一组；
-     * 两个中心点到本站的距离太接近就不标记，退回按 ETA 挑方向。
+     * 两个中心点到本站的距离太接近就换用 [platformGroupByPlatforms] 判断，
+     * 都判不出来就不标记，退回按 ETA 挑方向。
      */
     private suspend fun markPlatformDirections(
         companyNo: String,
         directions: List<LineDirection>,
         stationLat: Double,
         stationLng: Double,
+        platforms: List<Pair<Double, Double>> = emptyList(),
     ): List<LineDirection> = coroutineScope {
         val semaphore = Semaphore(ENRICH_CONCURRENCY)
         val evidence = directions.map { direction ->
@@ -272,12 +295,9 @@ class TongdaSource(private val api: TongdaApi) {
         val reference = located.firstOrNull()?.heading ?: return@coroutineScope directions
         val groups = located.groupBy { groupKey(it.heading!!, reference) }
         if (groups.size != 2) return@coroutineScope directions
-        val first = medoid(groups.getValue(0)) ?: return@coroutineScope directions
-        val second = medoid(groups.getValue(1)) ?: return@coroutineScope directions
-        val toFirst = metersBetween(stationLat, stationLng, first.first, first.second)
-        val toSecond = metersBetween(stationLat, stationLng, second.first, second.second)
-        if (Math.abs(toFirst - toSecond) < PLATFORM_SIDE_MARGIN) return@coroutineScope directions
-        val platformGroup = if (toFirst < toSecond) 0 else 1
+        val platformGroup = platformGroupByPosition(groups, stationLat, stationLng)
+            ?: platformGroupByPlatforms(groups, stationLat, stationLng, platforms)
+            ?: return@coroutineScope directions
         directions.map { direction ->
             val item = located.firstOrNull {
                 it.direction.lineId == direction.lineId && it.direction.direction == direction.direction
@@ -288,6 +308,64 @@ class TongdaSource(private val api: TongdaApi) {
                 direction
             }
         }
+    }
+
+    /** 两组的记录坐标中心点谁离本站台更近；差不多近就判不出来。 */
+    private fun platformGroupByPosition(
+        groups: Map<Int, List<PlatformEvidence>>,
+        stationLat: Double,
+        stationLng: Double,
+    ): Int? {
+        val first = medoid(groups.getValue(0)) ?: return null
+        val second = medoid(groups.getValue(1)) ?: return null
+        val toFirst = metersBetween(stationLat, stationLng, first.first, first.second)
+        val toSecond = metersBetween(stationLat, stationLng, second.first, second.second)
+        if (Math.abs(toFirst - toSecond) < PLATFORM_SIDE_MARGIN) return null
+        return if (toFirst < toSecond) 0 else 1
+    }
+
+    /**
+     * 记录坐标整体不可用时的备选判据。
+     *
+     * 梧州高中：8 条线路两个方向在站序接口里记的是同一个坐标，离站点表里的站台
+     * 270 多米，两组中心点因此重合。只有 307路、梧州六堡茶专线、12路 等少数线路
+     * 把本站台坐标写对了，此时只认这些「坐标落在某个同名站台附近」的表态：多数表态
+     * 指向本站台的那一组就是本站台的方向；若某一组明确表态去了另一个站台、另一组
+     * 没有任何表态，则本站台就是另一组。
+     */
+    private fun platformGroupByPlatforms(
+        groups: Map<Int, List<PlatformEvidence>>,
+        stationLat: Double,
+        stationLng: Double,
+        platforms: List<Pair<Double, Double>>,
+    ): Int? {
+        if (platforms.size < 2) return null
+        val clicked = platforms.indices.minByOrNull {
+            metersBetween(stationLat, stationLng, platforms[it].first, platforms[it].second)
+        } ?: return null
+        val declared = groups.mapValues { (_, members) ->
+            members.mapNotNull { item ->
+                val lat = item.lat ?: return@mapNotNull null
+                val lng = item.lng ?: return@mapNotNull null
+                val nearest = platforms.indices.minByOrNull {
+                    metersBetween(lat, lng, platforms[it].first, platforms[it].second)
+                } ?: return@mapNotNull null
+                val distance = metersBetween(lat, lng, platforms[nearest].first, platforms[nearest].second)
+                if (distance <= PLATFORM_ANCHOR_RADIUS) nearest else null
+            }
+        }
+        val candidates = groups.keys.filter { group ->
+            val votes = declared.getValue(group)
+            val own = votes.count { it == clicked }
+            own > 0 && own > votes.size - own
+        }
+        if (candidates.size == 1) return candidates.first()
+        val silent = groups.keys.filter { declared.getValue(it).isEmpty() }
+        val committed = groups.keys.filter { group ->
+            val votes = declared.getValue(group)
+            votes.isNotEmpty() && votes.count { it == clicked } * 2 < votes.size
+        }
+        return if (committed.size == 1 && silent.size == 1) silent.first() else null
     }
 
     /** 到组内其它点总距离最小者，相当于这一组多数线路标的站台坐标。 */
@@ -721,5 +799,8 @@ class TongdaSource(private val api: TongdaApi) {
 
         /** 两组方向的站台中心点到本站的距离差小于该值时不判定方向归属。 */
         private const val PLATFORM_SIDE_MARGIN = 10.0
+
+        /** 方向记录的站台坐标离同名站台小于该值时才当作「这条线路表态了站台」。 */
+        private const val PLATFORM_ANCHOR_RADIUS = 60.0
     }
 }

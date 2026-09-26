@@ -1,5 +1,6 @@
 package io.github.mimai114514.chemeilai.ui.realtime
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,7 +22,6 @@ import androidx.compose.material.icons.filled.DirectionsBus
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -35,6 +35,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -60,6 +63,12 @@ fun RealtimeScreen(
         viewModel(factory = RealtimeViewModel.factory(container, stationId, lineNo, direction))
     val state by viewModel.state.collectAsStateWithLifecycle()
 
+    var swapTurns by remember { mutableIntStateOf(0) }
+    val arrowRotation by animateFloatAsState(
+        targetValue = swapTurns * 180f,
+        label = "directionArrow",
+    )
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -77,20 +86,6 @@ fun RealtimeScreen(
                 },
                 actions = {
                     if (state.realtime != null) {
-                        IconButton(
-                            onClick = viewModel::switchDirection,
-                            enabled = state.realtime?.otherDirection != null,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.SwapHoriz,
-                                contentDescription = "换向",
-                                tint = if (state.realtime?.otherDirection != null) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                            )
-                        }
                         IconButton(onClick = viewModel::toggleFavorite) {
                             Icon(
                                 imageVector = if (state.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
@@ -110,29 +105,37 @@ fun RealtimeScreen(
             )
         },
     ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             val realtime = state.realtime
-            when {
-                state.loading && realtime == null -> Box(
-                    Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) { CircularProgressIndicator() }
+            DirectionPillBar(
+                startName = realtime?.startName,
+                endName = realtime?.endName,
+                arrowRotation = arrowRotation,
+                swapEnabled = realtime?.otherDirection != null,
+                onSwap = {
+                    viewModel.switchDirection()
+                    swapTurns += 1
+                },
+            )
+            Box(modifier = Modifier.fillMaxSize()) {
+                when {
+                    state.loading && realtime == null -> Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) { CircularProgressIndicator() }
 
-                state.error != null -> Box(
-                    Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) { Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error) }
+                    state.error != null -> Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) { Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error) }
 
-                realtime == null -> Box(
-                    Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) { Text("暂无数据") }
+                    realtime == null -> Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) { Text("暂无数据") }
 
-                else -> RealtimeContent(realtime = realtime)
+                    else -> RealtimeContent(realtime = realtime)
+                }
             }
         }
     }
@@ -193,15 +196,9 @@ private fun LineHeader(realtime: Realtime) {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = listOfNotNull(realtime.startName, realtime.endName).joinToString(" → "),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
                 text = "本站为第 ${realtime.targetOrder} 站",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
             )
             realtime.tip?.takeIf { it.isNotBlank() }?.let { tip ->
                 Text(
